@@ -108,19 +108,62 @@ class Datagrama:
 
 #######################################################################################
 
-# Funciones auxiliares
-def payload_encode(d: dict[str, str | int]) -> bytes:
-    return "\n".join(f"{k}={v}" for k, v in d.items()).encode("utf-8")
+# Funciones auxiliares payload | encode y decode texto plano
+def _encode_value(v) -> str:
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    elif isinstance(v, (int, float, str)):
+        return str(v)
+    elif isinstance(v, bytes):
+        return v.hex()
+    else:
+        raise ValueError(f"Unsupported type for encoding: {type(v)}")
 
-def payload_decode(b: bytes) -> dict[str, str]:
-    out: dict[str, str] = {}
+def _decode_value(k: str, v: str):
+    if k == 'data':
+        return bytes.fromhex(v)
+    elif v.lower() in ('true', 'false'):
+        return v.lower() == 'true'
+    try:
+        return int(v)
+    except ValueError:
+        try:
+            return float(v)
+        except ValueError:
+            return v
+
+def payload_encode(d: dict) -> bytes:
+    """Encode a dictionary into a payload bytes object.
+    
+    Special handling for:
+    - boolean values: converted to "true"/"false" strings
+    - binary data in 'data' field: converted to hex string
+    """
+    items = []
+    for k, v in d.items():
+        encoded_value = _encode_value(v)
+        items.append(f"{k}={encoded_value}")
+    return "\n".join(items).encode("utf-8")
+
+def payload_decode(b: bytes) -> dict:
+    """Decode a payload bytes object into a dictionary.
+    
+    Special handling for:
+    - "true"/"false" strings: converted to boolean
+    - 'data' field: converted from hex string back to bytes
+    - numeric strings: converted to int or float when possible
+    """
+    out = {}
     if not b:
         return out
+    
     for line in b.decode("utf-8", "strict").splitlines():
-        if not line or "=" not in line: 
+        if not line or "=" not in line:
             continue
         k, v = line.split("=", 1)
-        out[k.strip()] = v.strip()
+        k = k.strip()
+        v = v.strip()
+        out[k] = _decode_value(k, v)
     return out
 
 #######################################################################################
@@ -189,8 +232,7 @@ def make_bye(ver: int) -> Datagrama:
 
 
 
-
-# Ejemplo de checksum
+# Ejemplo de checksum [DEBUG]
 print(inet_checksum(b"hello"))
 msg = b"ABCD"     # en ASCII: 41 42 43 44 hex
 # Palabras de 16 bits: 0x4142, 0x4344
