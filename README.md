@@ -1,9 +1,13 @@
 # Redes
 
 **A**: Application
+
 **M**: Minimal
+
 **C**: Client
+
 **G**: Go-Back-N
+
 **F**: File Transfer
 
 ## Integrantes
