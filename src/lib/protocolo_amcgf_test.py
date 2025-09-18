@@ -3,7 +3,7 @@ import struct
 from protocolo_amcgf import (
     Datagrama, MsgType,
     HDR_FMT, HDR_SIZE, MAGIC, VER_SW, VER_GBN, MSS, MAX_FRAME,
-    dic_encode, dic_decode,
+    payload_encode, payload_decode,
     inet_checksum,
     FrameTooBig, Truncated, BadMagic, BadChecksum,
     make_hello, make_negotiate, make_negotiate_ok,
@@ -13,8 +13,8 @@ from protocolo_amcgf import (
 
 def test_dic_roundtrip():
     d = {"a": "1", "b": "hola", "mss": 1200}
-    enc = dic_encode(d)
-    dec = dic_decode(enc)
+    enc = payload_encode(d)
+    dec = payload_decode(enc)
     assert dec["a"] == "1"
     assert dec["b"] == "hola"
     assert dec["mss"] == "1200"
@@ -92,27 +92,27 @@ def test_make_hello():
 def test_make_negotiate_and_ok():
     n = make_negotiate("GBN", mss=1000, win=8, rto_ms=250)
     assert n.ver == VER_GBN and n.typ == MsgType.NEGOTIATE
-    d = dic_decode(n.payload)
+    d = payload_decode(n.payload)
     assert d["mss"] == "1000" and d["win"] == "8" and d["rto_ms"] == "250"
     ok = make_negotiate_ok(VER_GBN, 1000, win=8, rto_ms=250)
-    d2 = dic_decode(ok.payload)
+    d2 = payload_decode(ok.payload)
     assert ok.typ == MsgType.NEGOTIATE_OK
     assert d2["ver"] == str(VER_GBN) and d2["mss"] == "1000" and d2["win"] == "8" and d2["rto_ms"] == "250"
 
 def test_make_req_upload_download():
     up = make_req_upload("archivo.bin", 123456, VER_SW)
-    du = dic_decode(up.payload)
+    du = payload_decode(up.payload)
     assert up.typ == MsgType.REQUEST_UPLOAD and du["name"] == "archivo.bin" and du["size"] == "123456"
     down = make_req_download("archivo.bin", VER_GBN)
-    dd = dic_decode(down.payload)
+    dd = payload_decode(down.payload)
     assert down.typ == MsgType.REQUEST_DOWNLOAD and dd["name"] == "archivo.bin"
 
 def test_make_ok_err():
     ok = make_ok({"ready": "yes"}, ver=VER_GBN)
-    eo = dic_decode(ok.payload)
+    eo = payload_decode(ok.payload)
     assert ok.typ == MsgType.OK and eo["ready"] == "yes" and ok.ver == VER_GBN
     err = make_err("ENOENT", "no existe", ver=VER_SW)
-    de = dic_decode(err.payload)
+    de = payload_decode(err.payload)
     assert err.typ == MsgType.ERR and de["code"] == "ENOENT" and de["message"] == "no existe"
 
 def test_make_data_ack_bye():

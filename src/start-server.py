@@ -6,7 +6,7 @@ Esto me devolvio GPT quizas sirva de algo
 def handle_packet(pkt: Datagrama, state) -> list[Datagrama]:
     out: list[Datagrama] = []
     if pkt.typ == MsgType.HELLO:
-        params = dic_decode(pkt.payload)
+        params = payload_decode(pkt.payload)
         # valida op/name/size/proto...
         out.append(make_ok({"transfer_id": state.alloc_tid()}, ver=pkt.ver))
         state.begin(params, ver=pkt.ver)

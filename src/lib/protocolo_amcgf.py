@@ -5,8 +5,8 @@ import struct
 
 # Definicion de constantes y enum
 
-# Header: | MAGIC(2) | VER(1) | TYPE(1) | ACKNUM(4) | SEQNUM(4) | LEN(2) | CHECKSUM(2) |
-HDR_FMT  = "!HBBIIHH"             # big-endian
+# Header: | MAGIC(2) | VER(1) | TYPE(1) | ACKNUM(4) | SEQNUM(4) | LEN(2) | CHECKSUM(2) | = 20 bytes
+HDR_FMT  = "!HBBIIHH"             # big-endian tamaño total 20 bytes ! = big-endian, H = 2 bytes, B = 1 byte, I = 4 bytes
 HDR_SIZE = struct.calcsize(HDR_FMT)
 
 # 2 bytes: 0xAC 0xGF
@@ -109,10 +109,10 @@ class Datagrama:
 #######################################################################################
 
 # Funciones auxiliares
-def dic_encode(d: dict[str, str | int]) -> bytes:
+def payload_encode(d: dict[str, str | int]) -> bytes:
     return "\n".join(f"{k}={v}" for k, v in d.items()).encode("utf-8")
 
-def dic_decode(b: bytes) -> dict[str, str]:
+def payload_decode(b: bytes) -> dict[str, str]:
     out: dict[str, str] = {}
     if not b:
         return out
@@ -130,7 +130,7 @@ def dic_decode(b: bytes) -> dict[str, str]:
 # HELLO
 def make_hello(proto: str = "SW") -> Datagrama:
     ver = VER_SW if proto.upper() == "SW" else VER_GBN
-    return Datagrama(ver, MsgType.HELLO, payload=dic_encode({}))
+    return Datagrama(ver, MsgType.HELLO, payload=payload_encode({}))
 
 # NEGOTIATE
 def make_negotiate(proto: str, mss: int = MSS, win: int | None = None, rto_ms: int | None = None) -> Datagrama:
@@ -142,29 +142,29 @@ def make_negotiate(proto: str, mss: int = MSS, win: int | None = None, rto_ms: i
     if win: d["win"] = win
     if rto_ms: d["rto_ms"] = rto_ms 
     
-    return Datagrama(ver, MsgType.NEGOTIATE, payload=dic_encode(d))
+    return Datagrama(ver, MsgType.NEGOTIATE, payload=payload_encode(d))
 
 # NEGOTIATE_OK
 def make_negotiate_ok(ver: int, mss: int, win: int | None = None, rto_ms: int | None = None) -> Datagrama:
     d = {"ver": ver, "mss": mss}
     if win: d["win"] = win
     if rto_ms: d["rto_ms"] = rto_ms
-    return Datagrama(ver, MsgType.NEGOTIATE_OK, payload=dic_encode(d))
+    return Datagrama(ver, MsgType.NEGOTIATE_OK, payload=payload_encode(d))
 
 # REQUEST_UPLOAD
 def make_req_upload(name: str, size: int, ver: int) -> Datagrama:
-    return Datagrama(ver, MsgType.REQUEST_UPLOAD, payload=dic_encode({"name": name, "size": size}))
+    return Datagrama(ver, MsgType.REQUEST_UPLOAD, payload=payload_encode({"name": name, "size": size}))
 
 # REQUEST_DOWNLOAD
 def make_req_download(name: str, ver: int) -> Datagrama:
-    return Datagrama(ver, MsgType.REQUEST_DOWNLOAD, payload=dic_encode({"name": name}))
+    return Datagrama(ver, MsgType.REQUEST_DOWNLOAD, payload=payload_encode({"name": name}))
 
 # OK
 def make_ok(extra: dict | None = None, ver: int = VER_SW) -> Datagrama:
     return Datagrama(
         ver,
         MsgType.OK,
-        payload=dic_encode(extra or {})
+        payload=payload_encode(extra or {})
     )
 
 # ERR
@@ -172,7 +172,7 @@ def make_err(code: str, msg: str, ver: int = VER_SW) -> Datagrama:
     return Datagrama(
         ver,
         MsgType.ERR,
-        payload=dic_encode({"code": code, "message": msg})
+        payload=payload_encode({"code": code, "message": msg})
     )
 
 # DATA
