@@ -9,7 +9,7 @@ import struct
 HDR_FMT  = "!HBBIIHH"             # big-endian tamaño total 20 bytes ! = big-endian, H = 2 bytes, B = 1 byte, I = 4 bytes
 HDR_SIZE = struct.calcsize(HDR_FMT)
 
-# 2 bytes: 0xAC 0xGF
+# 2 bytes: 0xCA 0xFE
 MAGIC = 0xCAFE
 VER_SW  = 1                       # Stop-and-Wait
 VER_GBN = 2                       # Go-Back-N
@@ -18,16 +18,16 @@ MSS = 1200                        # payload max recomendado para DATA
 MAX_FRAME = HDR_SIZE + MSS
 
 class MsgType(IntEnum):
-    HELLO            = 0
-    NEGOTIATE        = 1
-    NEGOTIATE_OK     = 2
-    REQUEST_UPLOAD   = 3
-    REQUEST_DOWNLOAD = 4
-    OK    = 5
-    ERR   = 6
-    DATA  = 7
-    ACK   = 8
-    BYE   = 9
+    HELLO            = 0 # Mensaje de Hello
+    NEGOTIATE        = 1 # Mensaje de Negociacion
+    NEGOTIATE_OK     = 2 # Mensaje de OK
+    REQUEST_UPLOAD   = 3 # Mensaje de Upload
+    REQUEST_DOWNLOAD = 4 # Mensaje de Download
+    OK    = 5 # Mensaje de OK
+    ERR   = 6 # Mensaje de Error
+    DATA  = 7 # Mensaje de Data con carga util de bytes
+    ACK   = 8 # Mensaje de ACK
+    BYE   = 9 # Mensaje de BYE
 
 # Errores
 class ProtoError(Exception): ...
@@ -59,7 +59,7 @@ class Datagrama:
     payload: bytes = b"" # Payload
 
     def encode(self) -> bytes:
-        if len(self.payload) > MSS and self.typ == MsgType.DATA:
+        if len(self.payload) > MSS:
             raise FrameTooBig(f"DATA payload {len(self.payload)} > MSS {MSS}")
         
         # Header sin checksum
@@ -160,7 +160,7 @@ def payload_decode(b: bytes) -> dict:
     for line in b.decode("utf-8", "strict").splitlines():
         if not line or "=" not in line:
             continue
-        k, v = line.split("=", 1)
+        k, v = line.split("=", 1) # La clave no puede tener =
         k = k.strip()
         v = v.strip()
         out[k] = _decode_value(k, v)
@@ -239,3 +239,16 @@ msg = b"ABCD"     # en ASCII: 41 42 43 44 hex
 # Suma: 0x4142 + 0x4344 = 0x8476
 # Complemento a uno: ~0x8476 = 0x7B79
 print(hex(inet_checksum(msg)))  # '0x7b79'
+
+d = {"segmento": True, "data": b"hola"}
+enc = payload_encode(d)
+dec = payload_decode(enc)
+print(f"Bytes: {enc!r}")
+print(f"Hex: {enc.hex(' ', 1)}")
+print(f"Dec: {dec!r}")
+
+
+a = b"holaaaaaaaaaaaaaaaaaaaaaa"
+for i in range(0, len(a), 3):
+    print(i)
+    print(a[i:i+3])
