@@ -8,4 +8,3 @@ PROTOCOL_GBN = 2
 class Client(Connection):
     src: str = 'data/host/'
     name: str = 'file.txt'
-    protocol: int = PROTOCOL_SW

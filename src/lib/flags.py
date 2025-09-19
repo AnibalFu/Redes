@@ -43,6 +43,14 @@ def set_port(flag: str, body: str | None, entity: Connection):
             print(f'Warning: {flag} {body} must be numeric')
             return
 
+def set_protocol(flag: str, body: str | None, entity: Connection):
+    if body == 'GBN':
+        entity.protocol = PROTOCOL_GBN
+    elif body == 'SW':
+        entity.protocol = PROTOCOL_SW
+    else:
+        print(f'Warning: {flag} {body} does not exist')
+
 def set_src(flag: str, body: str | None, entity: Client):
     if body is None:
         print(f'Warning: {flag} {body} is not valid')
@@ -54,14 +62,6 @@ def set_name(flag: str, body: str | None, entity: Client):
         print(f'Warning: {flag} {body} is not valid')
     else:
         entity.name = body
-
-def set_protocol(flag: str, body: str | None, entity: Client):
-    if body == 'GBN':
-        entity.protocol = PROTOCOL_GBN
-    elif body == 'SW':
-        entity.protocol = PROTOCOL_SW
-    else:
-        print(f'Warning: {flag} {body} does not exist')
 
 def set_storage(flag: str, body: str | None, entity: Server):
     if body is None:
