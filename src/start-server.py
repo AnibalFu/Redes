@@ -1,4 +1,65 @@
+import sys
+
+from socket import socket, AF_INET, SOCK_DGRAM
+from signal import SIGINT, signal
+from types import FrameType
+
+from lib.server import Server
+from lib.flags import SERVER_FLAGS
+from lib.utils import split
 from lib.protocolo_amcgf import *
+
+def sigint_handler(_: int, frame: FrameType | None):
+    server_socket = frame.f_locals['server_socket']
+    
+    try:
+        server_socket.close()
+    except:
+        print(f'\nError: Socket {server_socket} could not be closed')
+        sys.exit(-1)
+    
+    print('\nGraceful Exit')
+    sys.exit(0)    
+
+def process_args(args: list[str]):
+    server = Server()
+    
+    for arg in args:
+        try:
+            (flag, body) = arg.split(' ', maxsplit=2)
+        except ValueError:
+            flag = arg
+            body = None
+
+        function = SERVER_FLAGS.get(flag)
+
+        if function:
+            function(flag=flag, body=body, entity=server)
+        else:
+            print(f'Warning: Bad Flag {flag}')
+
+    return server
+
+def run(server: Server):
+    server_socket = socket(AF_INET, SOCK_DGRAM)
+    server_socket.bind((server.host, server.port))
+
+    while True:
+        # Esperar y manejar paquetes ...
+        pass
+
+    server_socket.close()
+
+if __name__ == '__main__':
+
+    # Piso la señal de SIGINT
+    signal(SIGINT, sigint_handler)
+
+    args = split(sys.argv)
+
+    server = process_args(args)
+
+    run(server=server)
 
 """
 Esto me devolvio GPT quizas sirva de algo
