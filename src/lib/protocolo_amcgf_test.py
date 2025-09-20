@@ -15,7 +15,7 @@ import struct
 from protocolo_amcgf import (
     Datagrama, MsgType,
     HDR_FMT, HDR_SIZE, VER_SW, VER_GBN, MSS, MAX_FRAME,
-    FLAG_ACK,
+    FLAG_ACK, FLAG_MF, 
     payload_encode, payload_decode,
     inet_checksum,
     FrameTooBig, Truncated, BadChecksum,
@@ -188,3 +188,23 @@ def test13_make_data_ack_bye():
 def test14_max_frame_constant():
     # Constante MAX_FRAME coherente con definicion (header + MSS).
     assert MAX_FRAME == HDR_SIZE + MSS
+
+def test15_mf_flag_behavior():
+    # DATA con mf=True debe encender FLAG_MF
+    d1 = make_data(seq=10, chunk=b"x"*10, ver=VER_SW, mf=True)
+    r1 = Datagrama.decode(d1.encode())
+    assert r1.typ == MsgType.DATA
+    assert r1.flags & FLAG_MF
+
+    # DATA con mf=False no debe encender FLAG_MF
+    d2 = make_data(seq=11, chunk=b"y"*10, ver=VER_SW, mf=False)
+    r2 = Datagrama.decode(d2.encode())
+    assert r2.typ == MsgType.DATA
+    assert (r2.flags & FLAG_MF) == 0
+
+    # OK con mf=True no deberia importar MF (lo ignoramos en control)
+    ok = make_ok({"ok": True}, ver=VER_SW, ack=0)
+    ok.flags |= FLAG_MF   # si alguien lo setea por error
+    r3 = Datagrama.decode(ok.encode())
+    assert r3.typ == MsgType.OK
+    # El receptor puede ignorar MF en tipos no DATA; no assert estricto aqui

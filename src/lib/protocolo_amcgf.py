@@ -27,6 +27,8 @@ MAX_FRAME = HDR_SIZE + MSS
 # Flags de 16 bits
 # Se usa el bit mas alto (0x8000) como "ACK flag" (0x8000 = 1000 0000 0000 0000)
 FLAG_ACK = 0x8000
+# Flag MF (More Fragments)
+FLAG_MF  = 0x4000   
 
 # Convencion: ack == 0 => no hay ACK piggyback
 ACK_NONE = 0
@@ -78,6 +80,12 @@ class Datagrama:
         flags = self.flags
         if self.typ == MsgType.ACK or self.ack != 0:
             flags |= FLAG_ACK
+
+        # Encendido automatico del flag MF si:
+        # - el tipo es DATA, y
+        # - el flag ya viene seteado en self.flags
+        if (self.typ == MsgType.DATA or self.typ == MsgType.REQUEST_DOWNLOAD or self.typ == MsgType.REQUEST_UPLOAD) and (self.flags & FLAG_MF):
+            flags |= FLAG_MF
 
         # Header con checksum en 0 para calcularlo
         header_wo_ck = struct.pack(
@@ -152,7 +160,9 @@ class Datagrama:
         flags_list = []
         if self.flags & FLAG_ACK:
             flags_list.append("ACK")
-        flags_str = "[" + ",".join(flags_list) + "]" if flags_list else "[]"
+        if self.flags & FLAG_MF:
+            flags_list.append("MF")
+        flags_str = "[" + ", ".join(flags_list) + "]" if flags_list else "[]"
 
         # Longitud del payload
         plen = len(self.payload)
@@ -238,11 +248,13 @@ def make_hello(proto: str = "SW", mss: int = MSS, win: int | None = None, rto_ms
         d["rto_ms"] = rto_ms
     return Datagrama(ver, MsgType.HELLO, payload=payload_encode(d))
 
-def make_req_upload(name: str, size: int, ver: int) -> Datagrama:
-    return Datagrama(ver, MsgType.REQUEST_UPLOAD, payload=payload_encode({"name": name, "size": size}))
+def make_req_upload(name: str, size: int, ver: int, mf: bool = False) -> Datagrama:
+    flags = FLAG_MF if mf else 0
+    return Datagrama(ver, MsgType.REQUEST_UPLOAD, payload=payload_encode({"name": name, "size": size}), flags=flags)
 
-def make_req_download(name: str, ver: int) -> Datagrama:
-    return Datagrama(ver, MsgType.REQUEST_DOWNLOAD, payload=payload_encode({"name": name}))
+def make_req_download(name: str, ver: int, mf: bool = False) -> Datagrama:
+    flags = FLAG_MF if mf else 0
+    return Datagrama(ver, MsgType.REQUEST_DOWNLOAD, payload=payload_encode({"name": name}), flags=flags)
 
 # OK / ERR con piggyback opcional de ACK (ack != 0 => ACK valido y se encendera FLAG_ACK)
 def make_ok(extra: dict | None = None, ver: int = VER_SW, ack: int = ACK_NONE) -> Datagrama:
@@ -252,8 +264,9 @@ def make_err(code: str, msg: str, ver: int = VER_SW, ack: int = ACK_NONE) -> Dat
     return Datagrama(ver, MsgType.ERR, ack=ack, payload=payload_encode({"code": code, "message": msg}))
 
 # DATA con seq obligatorio y ACK piggyback opcional
-def make_data(seq: int, chunk: bytes, ver: int, ack: int = ACK_NONE) -> Datagrama:
-    return Datagrama(ver, MsgType.DATA, ack=ack, seq=seq, payload=chunk)
+def make_data(seq: int, chunk: bytes, ver: int, ack: int = ACK_NONE, mf: bool = False) -> Datagrama:
+    flags = FLAG_MF if mf else 0
+    return Datagrama(ver, MsgType.DATA, ack=ack, seq=seq, payload=chunk, flags=flags)
 
 # ACK puro
 def make_ack(acknum: int, ver: int) -> Datagrama:
@@ -291,3 +304,12 @@ d = make_ok(extra={"ready": True}, ver=VER_SW, ack=42)
 d = d.encode()
 d = Datagrama.decode(d)
 print(d)
+
+# 2 fragmentos y un ultimo
+d1 = make_data(seq=0, chunk=b"A"*100, ver=VER_SW, mf=True)
+d2 = make_data(seq=1, chunk=b"B"*100, ver=VER_SW, mf=True, ack=42)
+d3 = make_data(seq=2, chunk=b"C"*60,  ver=VER_SW, mf=False)  # ultimo
+
+for d in (d1, d2, d3):
+    dec = Datagrama.decode(d.encode())
+    print(dec.pretty_print())   # deberias ver [MF] en los primeros dos, y sin MF en el ultimo
