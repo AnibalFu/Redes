@@ -5,108 +5,185 @@ import struct
 
 # Definicion de constantes y enum
 
-# Header: | MAGIC(2) | VER(1) | TYPE(1) | ACKNUM(4) | SEQNUM(4) | LEN(2) | CHECKSUM(2) | = 20 bytes
-HDR_FMT  = "!HBBIIHH"             # big-endian tamaño total 20 bytes ! = big-endian, H = 2 bytes, B = 1 byte, I = 4 bytes
+# amcgf_proto.py
+from dataclasses import dataclass
+from enum import IntEnum
+import struct
+
+# Header nuevo (16 bytes):
+# | TYPE(1) | VER(1) | FLAGS(2) | LEN(2) | CHECKSUM(2) | ACKNUM(4) | SEQNUM(4) |
+# Ordenado para uso simple con struct.pack en big-endian.
+HDR_FMT  = "!BBHHHII"  # B=1, B=1, H=2, H=2, H=2, I=4, I=4  => 16 bytes
 HDR_SIZE = struct.calcsize(HDR_FMT)
 
-# 2 bytes: 0xCA 0xFE
-MAGIC = 0xCAFE
-VER_SW  = 1                       # Stop-and-Wait
-VER_GBN = 2                       # Go-Back-N
+# Version del RDT (Stop-and-Wait o Go-Back-N)
+VER_SW  = 1  # Stop-and-Wait
+VER_GBN = 2  # Go-Back-N
 
-MSS = 1200                        # payload max recomendado para DATA
+# MTU de payload (recomendado por el TP)
+MSS = 1200
 MAX_FRAME = HDR_SIZE + MSS
 
+# Flags de 16 bits
+# Se usa el bit mas alto (0x8000) como "ACK flag" (0x8000 = 1000 0000 0000 0000)
+FLAG_ACK = 0x8000
+
+# Convencion: ack == 0 => no hay ACK piggyback
+ACK_NONE = 0
+
 class MsgType(IntEnum):
-    HELLO            = 0 # Mensaje de Hello
-    NEGOTIATE        = 1 # Mensaje de Negociacion
-    NEGOTIATE_OK     = 2 # Mensaje de OK
-    REQUEST_UPLOAD   = 3 # Mensaje de Upload
-    REQUEST_DOWNLOAD = 4 # Mensaje de Download
-    OK    = 5 # Mensaje de OK
-    ERR   = 6 # Mensaje de Error
-    DATA  = 7 # Mensaje de Data con carga util de bytes
-    ACK   = 8 # Mensaje de ACK
-    BYE   = 9 # Mensaje de BYE
+    # Se removieron NEGOTIATE y NEGOTIATE_OK
+    HELLO            = 0
+    REQUEST_UPLOAD   = 1
+    REQUEST_DOWNLOAD = 2
+    OK               = 3
+    ERR              = 4
+    DATA             = 5
+    ACK              = 6
+    BYE              = 7
 
 # Errores
 class ProtoError(Exception): ...
-class BadMagic(ProtoError): ...
 class BadChecksum(ProtoError): ...
 class Truncated(ProtoError): ...
 class FrameTooBig(ProtoError): ...
 
-# Algoritmo que hace checksum
+# Checksum estilo Internet sobre header (con checksum en 0) + payload
 def inet_checksum(data: bytes) -> int:
-    # Si el tamaño es impar, agregamos un byte 0
+    # Si el largo es impar, agregar un byte 0
     if len(data) % 2:
         data += b"\x00"
-    # Sumamos todos los pares de bytes
     s = 0
     for i in range(0, len(data), 2):
-        s += (data[i] << 8) | data[i+1]
+        s += (data[i] << 8) | data[i + 1]
         s = (s & 0xFFFF) + (s >> 16)
-    # Devolvemos el checksum complemento
     return (~s) & 0xFFFF
 
-# Clase Packet
-@dataclass # Crea un constructor automatico
+@dataclass
 class Datagrama:
-    ver: int # SW o GBN
-    typ: MsgType # Tipo de mensaje
-    ack: int = 0 # Número de ACK
-    seq: int = 0 # Número de secuencia
-    payload: bytes = b"" # Payload
+    ver: int                  # VER_SW o VER_GBN
+    typ: MsgType              # Tipo de mensaje
+    ack: int = 0              # Numero de ACK (piggyback o para MsgType.ACK)
+    seq: int = 0              # Numero de secuencia para DATA
+    payload: bytes = b""      # Datos
+    flags: int = 0            # Flags de 16 bits (FLAG_ACK si corresponde)
 
     def encode(self) -> bytes:
         if len(self.payload) > MSS:
             raise FrameTooBig(f"DATA payload {len(self.payload)} > MSS {MSS}")
-        
-        # Header sin checksum
+
+        # Encendido automatico del flag ACK si:
+        # - el tipo es ACK, o
+        # - hay piggyback (ack != 0)
+        flags = self.flags
+        if self.typ == MsgType.ACK or self.ack != 0:
+            flags |= FLAG_ACK
+
+        # Header con checksum en 0 para calcularlo
         header_wo_ck = struct.pack(
-            HDR_FMT, MAGIC, self.ver, int(self.typ), self.ack, self.seq, len(self.payload), 0
+            HDR_FMT,
+            int(self.typ),          # TYPE
+            self.ver,               # VER
+            flags,                  # FLAGS
+            len(self.payload),      # LEN
+            0,                      # CHECKSUM (0 para el calculo)
+            self.ack,               # ACKNUM
+            self.seq,               # SEQNUM
         )
-        
-        # Calculo checksum
+
         ck = inet_checksum(header_wo_ck + self.payload)
-        
-        # Header con checksum
+
+        # Header final con checksum real
         header = struct.pack(
-            HDR_FMT, MAGIC, self.ver, int(self.typ), self.ack, self.seq, len(self.payload), ck
+            HDR_FMT,
+            int(self.typ),
+            self.ver,
+            flags,
+            len(self.payload),
+            ck,
+            self.ack,
+            self.seq,
         )
-        
+
         return header + self.payload
 
-    # Static method para desempaquetar requiere de la clase misma
     @staticmethod
     def decode(buf: bytes) -> "Datagrama":
-        # Por lo menos el header
+        # Verificar largo minimo de header
         if len(buf) < HDR_SIZE:
             raise Truncated(f"{len(buf)} < HDR_SIZE {HDR_SIZE}")
-        
-        # Desempaquetado del header
-        magic, ver, typ, ack, seq, length, ck = struct.unpack(HDR_FMT, buf[:HDR_SIZE])
-        
-        # Validacion del magic
-        if magic != MAGIC:
-            raise BadMagic(hex(magic))          
-        
-        # Extraigo el payload
-        payload = buf[HDR_SIZE:HDR_SIZE+length]
+
+        typ, ver, flags, length, ck, ack, seq = struct.unpack(HDR_FMT, buf[:HDR_SIZE])
+
+        # Extraer payload
+        payload = buf[HDR_SIZE:HDR_SIZE + length]
         if len(payload) != length:
             raise Truncated(f"payload {len(payload)} != {length}")
-        
-        # Header sin checksum
-        header_zero = struct.pack(HDR_FMT, magic, ver, typ, ack, seq, length, 0)
-        
-        # Validacion del checksum
+
+        # Recalcular checksum con campo en 0
+        header_zero = struct.pack(
+            HDR_FMT,
+            typ,
+            ver,
+            flags,
+            length,
+            0,      # checksum cero para validar
+            ack,
+            seq,
+        )
         if inet_checksum(header_zero + payload) != ck:
             raise BadChecksum("checksum mismatch")
-        
-        return Datagrama(ver=ver, typ=MsgType(typ), ack=ack, seq=seq, payload=payload)
+
+        return Datagrama(
+            ver=ver,
+            typ=MsgType(typ),
+            ack=ack,
+            seq=seq,
+            payload=payload,
+            flags=flags,
+        )
 
 
-#######################################################################################
+    def pretty_print(self) -> str:
+        # Traduccion de version a nombre
+        ver_name = "SW" if self.ver == VER_SW else "GBN" if self.ver == VER_GBN else str(self.ver)
+
+        # Decodificacion de flags
+        flags_list = []
+        if self.flags & FLAG_ACK:
+            flags_list.append("ACK")
+        flags_str = "[" + ",".join(flags_list) + "]" if flags_list else "[]"
+
+        # Longitud del payload
+        plen = len(self.payload)
+
+        # Preview de payload (primeros 20 bytes)
+        if plen > 0:
+            preview = self.payload[:20]
+            if isinstance(preview, bytes):
+                try:
+                    preview_str = preview.decode("utf-8", "ignore")
+                except Exception:
+                    preview_str = preview.hex()
+            else:
+                preview_str = str(preview)
+        else:
+            preview_str = "(empty)"
+
+        return (
+            f"Datagrama {{\n"
+            f"  type={self.typ.name} ({int(self.typ)})\n"
+            f"  ver={ver_name}\n"
+            f"  flags=0x{self.flags:04X} {flags_str}\n"
+            f"  ack={self.ack}\n"
+            f"  seq={self.seq}\n"
+            f"  payload_len={plen}\n"
+            f"  payload_preview={preview_str}\n"
+            f"}}"
+        )
+
+
+
 
 # Funciones auxiliares payload | encode y decode texto plano
 def _encode_value(v) -> str:
@@ -120,10 +197,10 @@ def _encode_value(v) -> str:
         raise ValueError(f"Unsupported type for encoding: {type(v)}")
 
 def _decode_value(k: str, v: str):
-    if k == 'data':
+    if k == "data":
         return bytes.fromhex(v)
-    elif v.lower() in ('true', 'false'):
-        return v.lower() == 'true'
+    elif v.lower() in ("true", "false"):
+        return v.lower() == "true"
     try:
         return int(v)
     except ValueError:
@@ -133,113 +210,70 @@ def _decode_value(k: str, v: str):
             return v
 
 def payload_encode(d: dict) -> bytes:
-    """Encode a dictionary into a payload bytes object.
-    
-    Special handling for:
-    - boolean values: converted to "true"/"false" strings
-    - binary data in 'data' field: converted to hex string
-    """
     items = []
     for k, v in d.items():
-        encoded_value = _encode_value(v)
-        items.append(f"{k}={encoded_value}")
+        items.append(f"{k}={_encode_value(v)}")
     return "\n".join(items).encode("utf-8")
 
 def payload_decode(b: bytes) -> dict:
-    """Decode a payload bytes object into a dictionary.
-    
-    Special handling for:
-    - "true"/"false" strings: converted to boolean
-    - 'data' field: converted from hex string back to bytes
-    - numeric strings: converted to int or float when possible
-    """
     out = {}
     if not b:
         return out
-    
     for line in b.decode("utf-8", "strict").splitlines():
         if not line or "=" not in line:
             continue
-        k, v = line.split("=", 1) # La clave no puede tener =
-        k = k.strip()
-        v = v.strip()
-        out[k] = _decode_value(k, v)
+        k, v = line.split("=", 1)
+        out[k.strip()] = _decode_value(k.strip(), v.strip())
     return out
 
-#######################################################################################
+# -------------------- API --------------------
 
-# API
-
-# HELLO
-def make_hello(proto: str = "SW") -> Datagrama:
+# HELLO: negociar en el payload (ej: mss, win, rto_ms)
+def make_hello(proto: str = "SW", mss: int = MSS, win: int | None = None, rto_ms: int | None = None) -> Datagrama:
     ver = VER_SW if proto.upper() == "SW" else VER_GBN
-    return Datagrama(ver, MsgType.HELLO, payload=payload_encode({}))
-
-# NEGOTIATE
-def make_negotiate(proto: str, mss: int = MSS, win: int | None = None, rto_ms: int | None = None) -> Datagrama:
-    ver = VER_SW if proto.upper() == "SW" else VER_GBN
-    
     d = {"mss": mss}
-    
-    # Por ahora los dejo en el payload 
-    if win: d["win"] = win
-    if rto_ms: d["rto_ms"] = rto_ms 
-    
-    return Datagrama(ver, MsgType.NEGOTIATE, payload=payload_encode(d))
+    if win is not None:
+        d["win"] = win
+    if rto_ms is not None:
+        d["rto_ms"] = rto_ms
+    return Datagrama(ver, MsgType.HELLO, payload=payload_encode(d))
 
-# NEGOTIATE_OK
-def make_negotiate_ok(ver: int, mss: int, win: int | None = None, rto_ms: int | None = None) -> Datagrama:
-    d = {"ver": ver, "mss": mss}
-    if win: d["win"] = win
-    if rto_ms: d["rto_ms"] = rto_ms
-    return Datagrama(ver, MsgType.NEGOTIATE_OK, payload=payload_encode(d))
-
-# REQUEST_UPLOAD
 def make_req_upload(name: str, size: int, ver: int) -> Datagrama:
     return Datagrama(ver, MsgType.REQUEST_UPLOAD, payload=payload_encode({"name": name, "size": size}))
 
-# REQUEST_DOWNLOAD
 def make_req_download(name: str, ver: int) -> Datagrama:
     return Datagrama(ver, MsgType.REQUEST_DOWNLOAD, payload=payload_encode({"name": name}))
 
-# OK
-def make_ok(extra: dict | None = None, ver: int = VER_SW) -> Datagrama:
-    return Datagrama(
-        ver,
-        MsgType.OK,
-        payload=payload_encode(extra or {})
-    )
+# OK / ERR con piggyback opcional de ACK (ack != 0 => ACK valido y se encendera FLAG_ACK)
+def make_ok(extra: dict | None = None, ver: int = VER_SW, ack: int = ACK_NONE) -> Datagrama:
+    return Datagrama(ver, MsgType.OK, ack=ack, payload=payload_encode(extra or {}))
 
-# ERR
-def make_err(code: str, msg: str, ver: int = VER_SW) -> Datagrama:
-    return Datagrama(
-        ver,
-        MsgType.ERR,
-        payload=payload_encode({"code": code, "message": msg})
-    )
+def make_err(code: str, msg: str, ver: int = VER_SW, ack: int = ACK_NONE) -> Datagrama:
+    return Datagrama(ver, MsgType.ERR, ack=ack, payload=payload_encode({"code": code, "message": msg}))
 
-# DATA
-def make_data(seq: int, chunk: bytes, ver: int) -> Datagrama:
-    return Datagrama(ver, MsgType.DATA, seq=seq, payload=chunk)
+# DATA con seq obligatorio y ACK piggyback opcional
+def make_data(seq: int, chunk: bytes, ver: int, ack: int = ACK_NONE) -> Datagrama:
+    return Datagrama(ver, MsgType.DATA, ack=ack, seq=seq, payload=chunk)
 
-# ACK
+# ACK puro
 def make_ack(acknum: int, ver: int) -> Datagrama:
     return Datagrama(ver, MsgType.ACK, ack=acknum)
 
-# BYE
 def make_bye(ver: int) -> Datagrama:
     return Datagrama(ver, MsgType.BYE)
 
 
 
 # Ejemplo de checksum [DEBUG]
-print(inet_checksum(b"hello"))
+# print(inet_checksum(b"hello"))
 msg = b"ABCD"     # en ASCII: 41 42 43 44 hex
 # Palabras de 16 bits: 0x4142, 0x4344
 # Suma: 0x4142 + 0x4344 = 0x8476
 # Complemento a uno: ~0x8476 = 0x7B79
 print(hex(inet_checksum(msg)))  # '0x7b79'
 
+
+# DATA
 d = {"segmento": True, "data": b"hola"}
 enc = payload_encode(d)
 dec = payload_decode(enc)
@@ -247,8 +281,13 @@ print(f"Bytes: {enc!r}")
 print(f"Hex: {enc.hex(' ', 1)}")
 print(f"Dec: {dec!r}")
 
-
+print("=======================================")
 a = b"holaaaaaaaaaaaaaaaaaaaaaa"
 for i in range(0, len(a), 3):
     print(i)
     print(a[i:i+3])
+    
+d = make_ok(extra={"ready": True}, ver=VER_SW, ack=42)
+d = d.encode()
+d = Datagrama.decode(d)
+print(d)
