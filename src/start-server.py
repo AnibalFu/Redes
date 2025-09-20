@@ -45,7 +45,13 @@ def run(server: Server):
     server_socket.bind((server.host, server.port))
 
     while True:
-        # Esperar y manejar paquetes ...
+        
+        data, sender_address = server_socket.recvfrom(1000) #Tendria que leer el header nada mas
+        print(f"Received {len(data)} bytes from {sender_address}")
+        datagrama = Datagrama.decode(data)
+        print("Payload recibido")
+        print(payload_decode(datagrama.payload))
+        #server_socket.recvfrom(datagrama.payload_len(),sender_address) #Aca con el dato del len payload leo el restante
         pass
 
     server_socket.close()
