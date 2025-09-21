@@ -242,9 +242,9 @@ def make_hello(proto: str = "SW", mss: int = MSS, win: int | None = None, rto_ms
         d["rto_ms"] = rto_ms
     return Datagrama(ver, MsgType.HELLO, payload=payload_encode(d))
 
-def make_req_upload(name: str, size: int, ver: int, mf: bool = False) -> Datagrama:
+def make_req_upload(name: str, data: int, ver: int, mf: bool = False) -> Datagrama:
     flags = FLAG_MF if mf else 0
-    return Datagrama(ver, MsgType.REQUEST_UPLOAD, payload=payload_encode({"name": name, "size": size}), flags=flags)
+    return Datagrama(ver, MsgType.REQUEST_UPLOAD, payload=payload_encode({"name": name, "data": data}), flags=flags)
 
 def make_req_download(name: str, ver: int, mf: bool = False) -> Datagrama:
     flags = FLAG_MF if mf else 0
@@ -270,7 +270,7 @@ def make_bye(ver: int) -> Datagrama:
     return Datagrama(ver, MsgType.BYE)
 
 
-
+"""
 # Ejemplo de checksum [DEBUG]
 # print(inet_checksum(b"hello"))
 msg = b"ABCD"     # en ASCII: 41 42 43 44 hex
@@ -306,4 +306,5 @@ d3 = make_data(seq=2, chunk=b"C"*60,  ver=VER_SW, mf=False)  # ultimo
 
 for d in (d1, d2, d3):
     dec = Datagrama.decode(d.encode())
-    print(dec)   # deberias ver [MF] en los primeros dos, y sin MF en el ultimo
+    print(dec.pretty_print())   # deberias ver [MF] en los primeros dos, y sin MF en el ultimo
+"""

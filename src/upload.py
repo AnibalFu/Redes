@@ -1,7 +1,8 @@
 import sys
 
 from socket import socket, AF_INET, SOCK_DGRAM
-
+from lib.datagram_sending import send_bye, send_content, send_hello, send_request
+from lib.protocolo_amcgf import *
 from lib.client import Client
 from lib.flags import USER_FLAGS
 from lib.utils import split
@@ -17,7 +18,6 @@ def process_args(args: list[str]):
             body = None
 
         function = USER_FLAGS.get(flag)
-
         if function:
             function(flag=flag, body=body, entity=client)
         else:
@@ -26,22 +26,33 @@ def process_args(args: list[str]):
     return client
 
 def upload(client: Client):
-    up_socket = socket(AF_INET, SOCK_DGRAM)
-    up_socket.bind((client.host, client.port))
+    with open(client.src, "rb") as f:
+        contenido = f.read()
+    request_upload(client.name, contenido, client.host, client.port)
 
-    # Handshake
+def request_upload(filename: str, content: bytes, host: str, port: int):
+    SERVER = (host, port)
+    BUF = 4096
 
-    while True:
-        # Subir archivo ...
-        break
+    ctrl = socket(AF_INET, SOCK_DGRAM)
 
-    # Bye
+    # 1. HELLO
+    send_hello(ctrl, SERVER, BUF)
 
-    return
+    # 2. UPLOAD
+    send_request(make_req_upload, ctrl, SERVER, filename)
+    print("Recibido OK para UPLOAD")
+
+    # 3. Empieza la transferencia de datos
+    # (podemos negociar el puerto aca si queremos)
+    chunk = 6
+    send_content(ctrl, SERVER, content, chunk_size=chunk)
+
+    # FIN
+    send_bye(ctrl, SERVER, BUF)
+    ctrl.close()
 
 if __name__ == '__main__':
     args = split(sys.argv)
-
     client = process_args(args)
-
     upload(client=client)
