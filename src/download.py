@@ -1,7 +1,10 @@
 import sys
 
+from socket import socket, AF_INET, SOCK_DGRAM
+import time
 from lib.client import Client
 from lib.flags import USER_FLAGS
+from lib.protocolo_amcgf import FLAG_MF, VER_SW, Datagrama, MsgType, make_ack, make_bye, make_hello, make_req_download
 from lib.utils import split
 
 def process_args(args: list[str]):
@@ -23,81 +26,78 @@ def process_args(args: list[str]):
 
     return client
 
-if __name__ == '__main__':
-    args = split(sys.argv)
+def download(client: Client):
+    request_download(client.name, client.host, client.port)
 
-    client = process_args(args)
+def request_download(filename: str, host: str, port: int):
+    print(f"Solicitando descarga de '{filename}' desde {host}:{port}")
 
-    print(client)
-    
-    
-    
-"""
-from socket import *
-import time
+    SERVER = (host, port)
+    BUF = 4096
 
-SERVER = ("127.0.0.1", 12000)
-BUF = 1500
-
-def request_download(filename: str):
-    # 1) Control
     ctrl = socket(AF_INET, SOCK_DGRAM)
-    ctrl.sendto(f"DOWNLOAD {filename}".encode(), SERVER)
-    ans, addr = ctrl.recvfrom(BUF)
-    ctrl.close()
 
-    tag, port_str = ans.decode().split()
-    assert tag == "DATA_PORT"
-    data_port = int(port_str)
-    
-    # 2) Datos: nuevo socket hacia el puerto dedicado
-    data_sock = socket(AF_INET, SOCK_DGRAM)
-    data_sock.connect((SERVER[0], data_port))
-
-    # Handshake de llegada
-    data_sock.send(b"HELLO_DATA")
-    ok = data_sock.recv(BUF)
-    assert ok == b"SESSION_OK"
-
-    # Recibir archivo
-    chunks = []
-    while True:
-        pkt = data_sock.recv(BUF)
-        if pkt == b"FIN":
-            break
-        chunks.append(pkt)
-
-    data = b"".join(chunks)
-    print("Descargado:", len(data), "bytes", data)
-
-def request_upload(filename: str, content: bytes):
-    ctrl = socket(AF_INET, SOCK_DGRAM)
-    ctrl.sendto(f"UPLOAD {filename}".encode(), SERVER)
+    # 1. HELLO
+    hello = make_hello(proto="SW")
+    ctrl.sendto(hello.encode(), SERVER)
     ans, _ = ctrl.recvfrom(BUF)
+    resp = Datagrama.decode(ans)
+    assert resp.typ == MsgType.HELLO, "Esperaba HELLO ACK"
+    print("Recibido HELLO ACK")
+
+    # 2. DOWNLOAD
+    req = make_req_download(filename, 0, VER_SW)  # El campo data puede ser 0 o vacío, solo nombre
+    ctrl.sendto(req.encode(), SERVER)
+    ans, _ = ctrl.recvfrom(BUF)
+    resp = Datagrama.decode(ans)
+    assert resp.typ == MsgType.OK, "Esperaba OK tras DOWNLOAD"
+    print("Recibido OK para DOWNLOAD")
+
+    # 3. Empieza a llegar la transferencia de datos
+    # (podemos negociar el puerto aca si queremos)
+    expected_seq = 0
+    while True:
+        print("Por recibir...")
+        data, sender_address = ctrl.recvfrom(4096)
+        # sender = (SERVER[0], sender_address[1])
+        try:
+            datagrama = Datagrama.decode(data)
+        except Exception as e:
+            print(f"Error al decodificar datagrama: {e}")
+            continue
+
+        if datagrama.typ == MsgType.DATA:
+            if expected_seq == 0:
+                expected_seq = datagrama.seq
+            data = datagrama.payload
+            print(f"Recibido {data}")
+            print(f"Recibido DATA con seq {datagrama.seq}")
+            # Enviar ACK
+            ack = make_ack(acknum=expected_seq + 1, ver=VER_SW)
+            ctrl.sendto(ack.encode(), SERVER)
+            print(f"Enviado ACK {expected_seq + 1}")
+            if not (datagrama.flags & FLAG_MF):
+                print("Archivo recibido completo")
+                break
+            if datagrama.seq == expected_seq:
+                expected_seq += 1
+
+        else:
+            print(f"Mensaje inesperado: {datagrama.pretty_print()}")
+            continue
+
+    # FIN
+    bye = make_bye(VER_SW)
+    ctrl.sendto(bye.encode(), SERVER)
+    ans, _ = ctrl.recvfrom(BUF)
+    resp = Datagrama.decode(ans)
+    assert resp.typ == MsgType.OK, "Esperaba OK tras BYE"
+    print("Transferencia finalizada correctamente")
     ctrl.close()
 
-    tag, port_str = ans.decode().split()
-    assert tag == "DATA_PORT"
-    data_port = int(port_str)
 
-    data_sock = socket(AF_INET, SOCK_DGRAM)
-    data_sock.connect((SERVER[0], data_port))
-
-    data_sock.send(b"HELLO_DATA")
-    ok = data_sock.recv(BUF)
-    assert ok == b"SESSION_OK"
-
-    # Enviar contenido en chunks
-    chunk = 1200
-    for i in range(0, len(content), chunk):
-        data_sock.send(content[i:i+chunk])
-        # acá podés meter tu ARQ (seq/ack/timeout) si querés confiabilidad
-    data_sock.send(b"FIN")
-    resp = data_sock.recv(BUF)
-    print("Servidor dice:", resp.decode())
 
 if __name__ == "__main__":
-    request_download("demo.txt")
-    request_upload("subida.bin", b"A"*5000)
-
-"""
+    args = split(sys.argv)
+    client = process_args(args)
+    download(client=client)
