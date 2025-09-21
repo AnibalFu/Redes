@@ -1,22 +1,30 @@
 from lib.protocolo_amcgf import VER_SW, Datagrama, MsgType, make_bye, make_data, make_hello
 
 
-def send_content(sender_socket, receiver_addr, content, chunk_size):
+def send_content(sender_socket, receiver_addr, content, chunk_size, timeout=2):
+    sender_socket.settimeout(timeout)
     seq = 0
     for i in range(0, len(content), chunk_size):
         payload = content[i:i + chunk_size]
         mf = (i + chunk_size) < len(content)
-
         datagrama = make_data(seq=seq, chunk=payload, ver=VER_SW, mf=mf)
-        sender_socket.sendto(datagrama.encode(), receiver_addr)
-        print(f"Enviado DATA con seq {seq}, MF={mf}")
-
-        # Espera ACK antes de enviar el siguiente
-        data, _ = sender_socket.recvfrom(4096)
-        datagram = Datagrama.decode(data)
-        assert datagram.typ == MsgType.ACK, "Esperaba ACK tras DATA"
-        print(datagram.pretty_print())
+        encoded = datagrama.encode()
+        ack_ok = False
+        while not ack_ok:
+            sender_socket.sendto(encoded, receiver_addr)
+            print(f"Enviado DATA con seq {seq}, MF={mf}")
+            try:
+                data, _ = sender_socket.recvfrom(4096)
+                datagram = Datagrama.decode(data)
+                if datagram.typ == MsgType.ACK and datagram.ack == seq + 1:
+                    print(f"ACK correcto recibido: {datagram.pretty_print()}")
+                    ack_ok = True
+                else:
+                    print(f"ACK incorrecto (esperaba {seq+1}), reenviando DATA seq {seq}")
+            except TimeoutError:
+                print(f"Timeout esperando ACK para seq {seq}, reenviando DATA")
         seq += 1
+    sender_socket.settimeout(None)  # Restablece el timeout
 
 
 def send_hello(sender_socket, receiver_addr, buf):
