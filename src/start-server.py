@@ -73,10 +73,19 @@ def run(server: Server):
             server_socket.sendto(resp.encode(), sender_address)
             state["step"] = 2
             # Puedes guardar el nombre del archivo aquí si quieres
+            
+        elif datagrama.typ == MsgType.DATA and state["step"] == 1:
+            print("DATA RECIBIDA recibido")
+            resp = make_ack(acknum=datagrama.seq + 1,ver=VER_SW)
+            server_socket.sendto(resp.encode(), sender_address)
+            # Puedes guardar el nombre del archivo aquí si quieres
 
         elif datagrama.typ == MsgType.DATA and state["step"] == 2:
             print(f"DATA recibido seq={datagrama.seq} len={len(datagrama.payload)} payload={datagrama.payload}")
             state["filedata"] += datagrama.payload
+            # Enviar ACK por cada DATA recibido
+            resp = make_ack(acknum=datagrama.seq + 1,ver=VER_SW)
+            server_socket.sendto(resp.encode(), sender_address)
             # Si no hay MF, es el último fragmento
             if not (datagrama.flags & FLAG_MF):
                 print("Archivo recibido completo, esperando BYE...")

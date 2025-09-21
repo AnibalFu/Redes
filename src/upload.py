@@ -54,13 +54,18 @@ def request_upload(filename: str, content: bytes, host: str, port: int):
     # 3. Empieza la transferencia de datos
     # (podemos negociar el puerto aca si queremos)
     seq = 0
-    chunk = 1200
+    chunk = 6
     for i in range(0, len(content), chunk):
         payload = content[i:i+chunk]
         mf = (i + chunk) < len(content)
         datagrama = make_data(seq=seq, chunk=payload, ver=VER_SW, mf=mf)
         ctrl.sendto(datagrama.encode(), SERVER)
+        # Espera ACK antes de enviar el siguiente
+        data, sender_address = ctrl.recvfrom(4096)
+        datagram = Datagrama.decode(data)
+        assert datagram.typ == MsgType.ACK, "Esperaba ACK tras DATA"
         seq += 1
+        print(datagram.pretty_print())
 
     # FIN
     bye = make_bye(VER_SW)
