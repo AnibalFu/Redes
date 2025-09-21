@@ -44,15 +44,54 @@ def run(server: Server):
     server_socket = socket(AF_INET, SOCK_DGRAM)
     server_socket.bind((server.host, server.port))
 
+    # Estado por cliente (para pruebas, usa address como clave)
+    client_states = {}
+
     while True:
-        
-        data, sender_address = server_socket.recvfrom(1000) #Tendria que leer el header nada mas
-        print(f"Received {len(data)} bytes from {sender_address}")
-        datagrama = Datagrama.decode(data)
-        print("Payload recibido")
-        print(payload_decode(datagrama.payload))
-        #server_socket.recvfrom(datagrama.payload_len(),sender_address) #Aca con el dato del len payload leo el restante
-        pass
+        data, sender_address = server_socket.recvfrom(4096)
+        if len(data) < HDR_SIZE:
+            print("Mensaje de control recibido:", data)
+            continue
+
+        try:
+            datagrama = Datagrama.decode(data)
+        except Exception as e:
+            print(f"Error al decodificar datagrama: {e}")
+            continue
+
+        state = client_states.get(sender_address, {"step": 0, "filedata": b""})
+
+        if datagrama.typ == MsgType.HELLO and state["step"] == 0:
+            print("HELLO recibido")
+            resp = make_hello(proto="SW")
+            server_socket.sendto(resp.encode(), sender_address)
+            state["step"] = 1
+
+        elif datagrama.typ == MsgType.REQUEST_UPLOAD and state["step"] == 1:
+            print("UPLOAD recibido")
+            resp = make_ok(ver=VER_SW)
+            server_socket.sendto(resp.encode(), sender_address)
+            state["step"] = 2
+            # Puedes guardar el nombre del archivo aquí si quieres
+
+        elif datagrama.typ == MsgType.DATA and state["step"] == 2:
+            print(f"DATA recibido seq={datagrama.seq} len={len(datagrama.payload)} payload={datagrama.payload}")
+            state["filedata"] += datagrama.payload
+            # Si no hay MF, es el último fragmento
+            if not (datagrama.flags & FLAG_MF):
+                print("Archivo recibido completo, esperando BYE...")
+
+        elif datagrama.typ == MsgType.BYE and state["step"] == 2:
+            print("BYE recibido, guardando archivo y respondiendo OK")
+            # Aquí podrías guardar el archivo en disco si quieres
+            # with open("archivo_recibido", "wb") as f:
+            #     f.write(state["filedata"])
+            resp = make_ok(ver=VER_SW)
+            server_socket.sendto(resp.encode(), sender_address)
+            state["step"] = 0
+            state["filedata"] = b""
+
+        client_states[sender_address] = state
 
     server_socket.close()
 
@@ -92,86 +131,3 @@ def handle_packet(pkt: Datagrama, state) -> list[Datagrama]:
         state.finish()
         out.append(make_ok(ver=pkt.ver))
     return out
-
-
-"""
-from socket import *
-import threading
-
-CTRL_HOST = "127.0.0.1"
-CTRL_PORT = 12000
-BUF = 1500
-
-def handle_session(sess_sock: socket, client_addr, mode: str, resource: str):
-    try:
-        # Handshake mínimo para confirmar que el cliente llegó al puerto de datos
-        # (evita enviar datos “al vacío”). Aprendemos el puerto de datos del cliente
-        # mediante recvfrom y luego conectamos el socket a ese peer.
-        sess_sock.settimeout(5.0)
-        try:
-            ping, client_data_addr = sess_sock.recvfrom(BUF)
-        except timeout:
-            # Cliente no llegó; cerrar sesión
-            return
-
-        # Conectar al puerto de datos real del cliente
-    
-        # Responder ACK de sesión
-        sess_sock.sendto(b"SESSION_OK", client_data_addr)
-
-        if mode == "DOWNLOAD":
-            # Demo: mandar contenido en chunks
-            data = b"hola desde el servidor\n" * 10
-            chunk = 1200
-            for i in range(0, len(data), chunk):
-                sess_sock.sendto(data[i:i+chunk], client_data_addr)
-            sess_sock.sendto(b"FIN", client_data_addr)
-        else:
-            # UPLOAD: recibir hasta "FIN"
-            received = bytearray()
-            while True:
-                pkt = sess_sock.recv(BUF)
-                if pkt == b"FIN":
-                    break
-                received += pkt
-            # demo: confirmar tamaño recibido
-            sess_sock.sendto(f"RCV {len(received)} bytes".encode(), client_data_addr)
-    finally:
-        sess_sock.close()
-
-def main():
-    ctrl = socket(AF_INET, SOCK_DGRAM)
-    ctrl.bind((CTRL_HOST, CTRL_PORT))
-    print(f"Control UDP escuchando en {CTRL_HOST}:{CTRL_PORT}")
-
-    while True:
-        data, addr = ctrl.recvfrom(BUF)
-        # Protocolo de control minimalista: "DOWNLOAD nombre" o "UPLOAD nombre"
-        try:
-            parts = data.decode().strip().split(maxsplit=1)
-            mode = parts[0].upper()
-            resource = parts[1] if len(parts) > 1 else ""
-        except Exception:
-            ctrl.sendto(b"ERR bad request", addr)
-            continue
-
-        # Crear socket/puerto dedicado
-        sess_sock = socket(AF_INET, SOCK_DGRAM)
-        sess_sock.bind((CTRL_HOST, 0))  # puerto efímero
-        sess_port = sess_sock.getsockname()[1]
-
-        # Responder al cliente por el puerto de control
-        ctrl.sendto(f"DATA_PORT {sess_port}".encode(), addr)
-
-        # Lanzar hilo de sesión
-        t = threading.Thread(
-            target=handle_session,
-            args=(sess_sock, addr, mode, resource),
-            daemon=True
-        )
-        t.start()
-
-if __name__ == "__main__":
-    main()
-
-"""

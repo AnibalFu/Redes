@@ -25,25 +25,53 @@ def process_args(args: list[str]):
     return client
 
 def upload(client: Client):
-    # Mejor poner la conexion aparte  
-    up_socket = socket(AF_INET, SOCK_DGRAM)  # creo el socket UDP
-    server_address = (client.host, client.port)  # dirección del servidor
+    with open(client.src, "rb") as f:
+        contenido = f.read()
+    request_upload(client.name, contenido, client.host, client.port)
 
-    with open(client.src, "rb") as f:  # Abro un archivo en modo binario
-        while True:   
-            contenido = f.read(20) # Leo de a 20 bytes del archivo
-            datagrama = make_req_upload(client.name, contenido, VER_SW, mf=False) #Creo datagrama seguro faltan campos
-            print(datagrama.payload)
-            up_socket.sendto(datagrama.encode(), server_address) 
-            if len(contenido) < 20:
-                break
-        # Bye
+def request_upload(filename: str, content: bytes, host: str, port: int):
+    SERVER = (host, port)
+    BUF = 4096
 
-        return
+    ctrl = socket(AF_INET, SOCK_DGRAM)
+
+    # 1. HELLO
+    hello = make_hello(proto="SW")
+    ctrl.sendto(hello.encode(), SERVER)
+    ans, _ = ctrl.recvfrom(BUF)
+    resp = Datagrama.decode(ans)
+    assert resp.typ == MsgType.HELLO, "Esperaba HELLO ACK"
+    print("Recibido HELLO ACK")
+
+    # 2. UPLOAD
+    req = make_req_upload(filename, 0, VER_SW)  # El campo data puede ser 0 o vacío, solo nombre
+    ctrl.sendto(req.encode(), SERVER)
+    ans, _ = ctrl.recvfrom(BUF)
+    resp = Datagrama.decode(ans)
+    assert resp.typ == MsgType.OK, "Esperaba OK tras UPLOAD"
+    print("Recibido OK para UPLOAD")
+
+    # 3. Empieza la transferencia de datos
+    # (podemos negociar el puerto aca si queremos)
+    seq = 0
+    chunk = 1200
+    for i in range(0, len(content), chunk):
+        payload = content[i:i+chunk]
+        mf = (i + chunk) < len(content)
+        datagrama = make_data(seq=seq, chunk=payload, ver=VER_SW, mf=mf)
+        ctrl.sendto(datagrama.encode(), SERVER)
+        seq += 1
+
+    # FIN
+    bye = make_bye(VER_SW)
+    ctrl.sendto(bye.encode(), SERVER)
+    ans, _ = ctrl.recvfrom(BUF)
+    resp = Datagrama.decode(ans)
+    assert resp.typ == MsgType.OK, "Esperaba OK tras BYE"
+    print("Transferencia finalizada correctamente")
+    ctrl.close()
 
 if __name__ == '__main__':
     args = split(sys.argv)
-
     client = process_args(args)
-
     upload(client=client)
