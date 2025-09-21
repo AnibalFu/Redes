@@ -1,5 +1,5 @@
 from attr import dataclass
-from storage import Storage
+from lib.storage import Storage
 from lib.connection import Connection
 
 @dataclass

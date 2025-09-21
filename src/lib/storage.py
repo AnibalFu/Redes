@@ -4,7 +4,6 @@ from pickle import load as load_pickle, dump as dump_pickle
 class StorageError(Exception): ...
 class KeyNotFoundError(StorageError): ...
 
-@dataclass
 class Storage:
     def __init__(self, data_path):
         self.data_path = data_path
