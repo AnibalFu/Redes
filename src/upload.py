@@ -1,7 +1,7 @@
 import sys
 
 from socket import socket, AF_INET, SOCK_DGRAM
-from lib.datagram_sending import send_content, send_hello
+from lib.datagram_sending import send_bye, send_content, send_hello, send_request
 from lib.protocolo_amcgf import *
 from lib.client import Client
 from lib.flags import USER_FLAGS
@@ -40,11 +40,7 @@ def request_upload(filename: str, content: bytes, host: str, port: int):
     send_hello(ctrl, SERVER, BUF)
 
     # 2. UPLOAD
-    req = make_req_upload(filename, 0, VER_SW)  # El campo data puede ser 0 o vacío, solo nombre
-    ctrl.sendto(req.encode(), SERVER)
-    ans, _ = ctrl.recvfrom(BUF)
-    resp = Datagrama.decode(ans)
-    assert resp.typ == MsgType.OK, "Esperaba OK tras UPLOAD"
+    send_request(make_req_upload, ctrl, SERVER, filename)
     print("Recibido OK para UPLOAD")
 
     # 3. Empieza la transferencia de datos
@@ -53,12 +49,7 @@ def request_upload(filename: str, content: bytes, host: str, port: int):
     send_content(ctrl, SERVER, content, chunk_size=chunk)
 
     # FIN
-    bye = make_bye(VER_SW)
-    ctrl.sendto(bye.encode(), SERVER)
-    ans, _ = ctrl.recvfrom(BUF)
-    resp = Datagrama.decode(ans)
-    assert resp.typ == MsgType.OK, "Esperaba OK tras BYE"
-    print("Transferencia finalizada correctamente")
+    send_bye(ctrl, SERVER, BUF)
     ctrl.close()
 
 if __name__ == '__main__':

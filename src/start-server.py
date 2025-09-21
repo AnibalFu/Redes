@@ -4,6 +4,7 @@ from socket import socket, AF_INET, SOCK_DGRAM
 from signal import SIGINT, signal
 from types import FrameType
 
+from lib.datagram_sending import send_content
 from lib.server import Server
 from lib.flags import SERVER_FLAGS
 from lib.utils import split
@@ -112,24 +113,13 @@ def run(server: Server):
     server_socket.close()
 
 def handle_download(server_socket: socket, sender_address, filename: str):
-    print(f"Preparando para enviar el archivo: {filename}")
+    print(f"Preparando para enviar el archivo: {filename}") # debug
+    # Asumo que despues no vamos a cargar todo el archivo en memoria,
+    # por eso lo abstraigo
     with open(filename, "rb") as f:
         content = f.read()
-    chunk = 6
-    seq = 0
-    for i in range(0, len(content), chunk):
-        payload = content[i:i+chunk]
-        mf = (i + chunk) < len(content)
-        datagrama = make_data(seq=seq, chunk=payload, ver=VER_SW, mf=mf)
-        server_socket.sendto(datagrama.encode(), sender_address)
-        # Espera ACK antes de enviar el siguiente
-        data, sender_address = server_socket.recvfrom(4096)
-        datagram = Datagrama.decode(data)
-        assert datagram.typ == MsgType.ACK, "Esperaba ACK tras DATA"
-        seq += 1
-        print(datagram.pretty_print())
+    send_content(server_socket, sender_address, content, chunk_size=6)
 
-    
 
 if __name__ == '__main__':
 
