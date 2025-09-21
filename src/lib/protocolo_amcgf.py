@@ -5,11 +5,6 @@ import struct
 
 # Definicion de constantes y enum
 
-# amcgf_proto.py
-from dataclasses import dataclass
-from enum import IntEnum
-import struct
-
 # Header nuevo (16 bytes):
 # | TYPE(1) | VER(1) | FLAGS(2) | LEN(2) | CHECKSUM(2) | ACKNUM(4) | SEQNUM(4) |
 # Ordenado para uso simple con struct.pack en big-endian.
@@ -34,15 +29,14 @@ FLAG_MF  = 0x4000
 ACK_NONE = 0
 
 class MsgType(IntEnum):
-    # Se removieron NEGOTIATE y NEGOTIATE_OK
     HELLO            = 0
     REQUEST_UPLOAD   = 1
     REQUEST_DOWNLOAD = 2
     OK               = 3
     ERR              = 4
-    DATA             = 5
+    DATA             = 5 # A sacar
     ACK              = 6
-    BYE              = 7
+    BYE              = 7 # A sacar
 
 # Errores
 class ProtoError(Exception): ...
@@ -152,7 +146,7 @@ class Datagrama:
         )
 
 
-    def pretty_print(self) -> str:
+    def __str__(self) -> str:
         # Traduccion de version a nombre
         ver_name = "SW" if self.ver == VER_SW else "GBN" if self.ver == VER_GBN else str(self.ver)
 
