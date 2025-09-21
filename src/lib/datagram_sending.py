@@ -17,7 +17,7 @@ def send_content(sender_socket, receiver_addr, content, chunk_size, timeout=2):
                 data, _ = sender_socket.recvfrom(4096)
                 datagram = Datagrama.decode(data)
                 if datagram.typ == MsgType.ACK and datagram.ack == seq + 1:
-                    print(f"ACK correcto recibido: {datagram.pretty_print()}")
+                    print(f"ACK correcto recibido: {datagram}")
                     ack_ok = True
                 else:
                     print(f"ACK incorrecto (esperaba {seq+1}), reenviando DATA seq {seq}")
