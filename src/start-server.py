@@ -52,8 +52,6 @@ def run(server: Server):
         if len(data) < HDR_SIZE:
             print("Mensaje de control recibido:", data)
             continue
-        else:
-            print(f"Datagrama recibido de {sender_address}")
 
         try:
             datagrama = Datagrama.decode(data)
@@ -74,17 +72,14 @@ def run(server: Server):
             resp = make_ok(ver=VER_SW)
             server_socket.sendto(resp.encode(), sender_address)
             state["step"] = 2
-            # Puedes guardar el nombre del archivo aquí si quieres
 
         elif datagrama.typ == MsgType.REQUEST_DOWNLOAD and state["step"] == 1:
             print("DOWNLOAD recibido")
             filename = datagrama.payload.decode().split('=', maxsplit=1)[1]
-            print(f"El cliente solicita el archivo: {filename}")
             resp = make_ok(ver=VER_SW)
             server_socket.sendto(resp.encode(), sender_address)
             state["step"] = 2
             handle_download(server_socket, sender_address, filename)
-            # Puedes guardar el nombre del archivo aquí si quieres
             
         elif datagrama.typ == MsgType.DATA and state["step"] == 1:
             print("DATA RECIBIDA recibido")
@@ -118,7 +113,7 @@ def run(server: Server):
 
 def handle_download(server_socket: socket, sender_address, filename: str):
     print(f"Preparando para enviar el archivo: {filename}")
-    with open("src/prueba.bin", "rb") as f:
+    with open(filename, "rb") as f:
         content = f.read()
     chunk = 6
     seq = 0
