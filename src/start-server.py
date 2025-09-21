@@ -92,3 +92,86 @@ def handle_packet(pkt: Datagrama, state) -> list[Datagrama]:
         state.finish()
         out.append(make_ok(ver=pkt.ver))
     return out
+
+
+"""
+from socket import *
+import threading
+
+CTRL_HOST = "127.0.0.1"
+CTRL_PORT = 12000
+BUF = 1500
+
+def handle_session(sess_sock: socket, client_addr, mode: str, resource: str):
+    try:
+        # Handshake mínimo para confirmar que el cliente llegó al puerto de datos
+        # (evita enviar datos “al vacío”). Aprendemos el puerto de datos del cliente
+        # mediante recvfrom y luego conectamos el socket a ese peer.
+        sess_sock.settimeout(5.0)
+        try:
+            ping, client_data_addr = sess_sock.recvfrom(BUF)
+        except timeout:
+            # Cliente no llegó; cerrar sesión
+            return
+
+        # Conectar al puerto de datos real del cliente
+    
+        # Responder ACK de sesión
+        sess_sock.sendto(b"SESSION_OK", client_data_addr)
+
+        if mode == "DOWNLOAD":
+            # Demo: mandar contenido en chunks
+            data = b"hola desde el servidor\n" * 10
+            chunk = 1200
+            for i in range(0, len(data), chunk):
+                sess_sock.sendto(data[i:i+chunk], client_data_addr)
+            sess_sock.sendto(b"FIN", client_data_addr)
+        else:
+            # UPLOAD: recibir hasta "FIN"
+            received = bytearray()
+            while True:
+                pkt = sess_sock.recv(BUF)
+                if pkt == b"FIN":
+                    break
+                received += pkt
+            # demo: confirmar tamaño recibido
+            sess_sock.sendto(f"RCV {len(received)} bytes".encode(), client_data_addr)
+    finally:
+        sess_sock.close()
+
+def main():
+    ctrl = socket(AF_INET, SOCK_DGRAM)
+    ctrl.bind((CTRL_HOST, CTRL_PORT))
+    print(f"Control UDP escuchando en {CTRL_HOST}:{CTRL_PORT}")
+
+    while True:
+        data, addr = ctrl.recvfrom(BUF)
+        # Protocolo de control minimalista: "DOWNLOAD nombre" o "UPLOAD nombre"
+        try:
+            parts = data.decode().strip().split(maxsplit=1)
+            mode = parts[0].upper()
+            resource = parts[1] if len(parts) > 1 else ""
+        except Exception:
+            ctrl.sendto(b"ERR bad request", addr)
+            continue
+
+        # Crear socket/puerto dedicado
+        sess_sock = socket(AF_INET, SOCK_DGRAM)
+        sess_sock.bind((CTRL_HOST, 0))  # puerto efímero
+        sess_port = sess_sock.getsockname()[1]
+
+        # Responder al cliente por el puerto de control
+        ctrl.sendto(f"DATA_PORT {sess_port}".encode(), addr)
+
+        # Lanzar hilo de sesión
+        t = threading.Thread(
+            target=handle_session,
+            args=(sess_sock, addr, mode, resource),
+            daemon=True
+        )
+        t.start()
+
+if __name__ == "__main__":
+    main()
+
+"""
