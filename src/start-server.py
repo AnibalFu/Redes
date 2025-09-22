@@ -3,11 +3,11 @@ import sys
 from socket import socket, AF_INET, SOCK_DGRAM
 from signal import SIGINT, signal
 from types import FrameType
+from argparse import ArgumentParser, Namespace, RawDescriptionHelpFormatter
 
 from lib.datagram_sending import send_content
 from lib.server import Server
 from lib.flags import SERVER_FLAGS
-from lib.utils import split
 from lib.protocolo_amcgf import *
 
 def sigint_handler(_: int, frame: FrameType | None):
@@ -22,24 +22,28 @@ def sigint_handler(_: int, frame: FrameType | None):
     print('\nGraceful Exit')
     sys.exit(0)    
 
-def process_args(args: list[str]):
+def define_flags():
+    parser = ArgumentParser(description='File server program', formatter_class=RawDescriptionHelpFormatter)
+   
+    parser.add_argument('-v', '--verbose', required=False, action='store_true', help='increase output verbosity')
+    parser.add_argument('-q', '--quiet', required=False, action='store_true', help='decrease output verbosity')
+    parser.add_argument('-H', '--host', required=False, type=str, metavar='HOST', help='server IP address')
+    parser.add_argument('-p', '--port', required=False, type=int, metavar='PORT', help='server port')
+    parser.add_argument('-s', '--storage', required=False, type=str, metavar='DIRPATH', help='destination file path')
+
+    return parser
+
+def process_args(args: Namespace):
     server = Server()
-    
-    for arg in args:
-        try:
-            (flag, body) = arg.split(' ', maxsplit=2)
-        except ValueError:
-            flag = arg
-            body = None
 
-        function = SERVER_FLAGS.get(flag)
-
-        if function:
-            function(flag=flag, body=body, entity=server)
-        else:
-            print(f'Warning: Bad Flag {flag}')
+    server.verbose = args.verbose
+    server.quiet = args.quiet
+    server.host = args.host if args.host else server.host
+    server.port = args.port if args.port else server.port    
+    server.storage = args.storage if args.storage else server.storage
 
     return server
+
 
 def run(server: Server):
     server_socket = socket(AF_INET, SOCK_DGRAM)
@@ -126,34 +130,8 @@ if __name__ == '__main__':
     # Piso la señal de SIGINT
     signal(SIGINT, sigint_handler)
 
-    args = split(sys.argv)
+    parser = define_flags()
+    args = parser.parse_args()
 
     server = process_args(args)
-
     run(server=server)
-
-"""
-Esto me devolvio GPT quizas sirva de algo
-"""
-def handle_packet(pkt: Datagrama, state) -> list[Datagrama]:
-    out: list[Datagrama] = []
-    if pkt.typ == MsgType.HELLO:
-        params = payload_decode(pkt.payload)
-        # valida op/name/size/proto...
-        out.append(make_ok({"transfer_id": state.alloc_tid()}, ver=pkt.ver))
-        state.begin(params, ver=pkt.ver)
-    elif pkt.typ == MsgType.DATA:
-        if pkt.ver == VER_SW:
-            if pkt.seq == state.expected_seq and state.check_and_write(pkt.payload):
-                state.expected_seq ^= 1
-            # en S&W se ACKea el último válido (puntual)
-            out.append(make_ack(state.expected_seq ^ 1, ver=pkt.ver))
-        else:  # VER_GBN
-            if pkt.seq == state.expected_seq and state.check_and_write(pkt.payload):
-                state.expected_seq += 1
-            # en GBN ACK acumulativo del último in-order
-            out.append(make_ack(state.expected_seq - 1, ver=pkt.ver))
-    elif pkt.typ == MsgType.BYE:
-        state.finish()
-        out.append(make_ok(ver=pkt.ver))
-    return out
