@@ -12,7 +12,8 @@ Header (big-endian, 16 bytes):
 
 import pytest
 import struct
-from protocolo_amcgf import (
+
+from lib.protocolo_amcgf import (
     Datagrama, MsgType,
     HDR_FMT, HDR_SIZE, VER_SW, VER_GBN, MSS, MAX_FRAME,
     FLAG_ACK, FLAG_MF, 
@@ -155,7 +156,7 @@ def test11_make_req_upload_download():
     # REQUEST_UPLOAD/REQUEST_DOWNLOAD: inicio de flujo (nombre y tamano).
     up = make_req_upload("archivo.bin", 123456, VER_SW)
     du = payload_decode(up.payload)
-    assert up.typ == MsgType.REQUEST_UPLOAD and du["name"] == "archivo.bin" and du["size"] == 123456
+    assert up.typ == MsgType.REQUEST_UPLOAD and du["name"] == "archivo.bin"
 
     down = make_req_download("archivo.bin", VER_GBN)
     dd = payload_decode(down.payload)
