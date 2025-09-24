@@ -1,4 +1,3 @@
-
 from socket import socket, AF_INET, SOCK_DGRAM
 from argparse import ArgumentParser, RawDescriptionHelpFormatter, Namespace
 
@@ -6,7 +5,7 @@ from lib.datagram_sending import send_bye, send_content, send_hello, send_reques
 from lib.protocolo_amcgf import *
 from lib.client import Client
 from lib.flags import USER_FLAGS
-
+MSS = 32
 def define_flags():
     parser = ArgumentParser(description='Upload file program', formatter_class=RawDescriptionHelpFormatter)
     
@@ -33,32 +32,60 @@ def process_args(args: Namespace):
 
     return client
 
-def upload(client: Client):
-    with open(client.src, "rb") as f:
-        contenido = f.read()
-    request_upload(client.name, contenido, client.host, client.port)
-
-def request_upload(filename: str, content: bytes, host: str, port: int):
+def request_upload(filename: str, src_path: str, host: str, port: int, chunk_size=MSS):
     SERVER = (host, port)
-    BUF = 4096
+    BUF = 16
 
     ctrl = socket(AF_INET, SOCK_DGRAM)
 
-    # 1. HELLO
-    send_hello(ctrl, SERVER, BUF)
+    # 1. REQUEST_UPLOAD directo
+    request = make_req_upload(filename, 0, VER_SW)
+    ctrl.sendto(request.encode(), SERVER)
 
-    # 2. UPLOAD
-    send_request(make_req_upload, ctrl, SERVER, filename)
-    print("Recibido OK para UPLOAD")
+    # 2. Espera OK desde el nuevo puerto y guarda la dirección
+    data, new_server_addr = ctrl.recvfrom(BUF)
+    datagrama = Datagrama.decode(data)
+    if datagrama.typ != MsgType.OK:
+        print("Error: no se recibió OK")
+        ctrl.close()
+        return
 
-    # 3. Empieza la transferencia de datos
-    # (podemos negociar el puerto aca si queremos)
-    chunk = 6
-    send_content(ctrl, SERVER, content, chunk_size=chunk)
+    print(f"Recibido OK para UPLOAD, nueva dirección: {new_server_addr}")
+
+    # 3. Transferencia de datos por la nueva dirección, leyendo por partes
+    transfer_sock = socket(AF_INET, SOCK_DGRAM)
+    seq = 0
+    with open(src_path, "rb") as f:
+        while True:
+            chunk = f.read(chunk_size)
+            if not chunk:
+                break
+            mf = f.peek(1) != b'' if hasattr(f, 'peek') else True  # MF si hay más datos
+            datagrama = make_data(seq=seq, chunk=chunk, ver=VER_SW, mf=mf)
+            encoded = datagrama.encode()
+            ack_ok = False
+            while not ack_ok:
+                transfer_sock.sendto(encoded, new_server_addr)
+                print(f"Enviado DATA con seq {seq}, MF={mf}")
+                try:
+                    data, _ = transfer_sock.recvfrom(BUF)
+                    datagram = Datagrama.decode(data)
+                    if datagram.typ == MsgType.ACK and datagram.ack == seq + 1:
+                        print(f"ACK correcto recibido: {datagram}")
+                        ack_ok = True
+                    else:
+                        print(f"ACK incorrecto (esperaba {seq+1}), reenviando DATA seq {seq}")
+                except TimeoutError:
+                    print(f"Timeout esperando ACK para seq {seq}, reenviando DATA")
+            seq += 1
 
     # FIN
-    send_bye(ctrl, SERVER, BUF)
+    send_bye(transfer_sock, new_server_addr, BUF)
+    transfer_sock.close()
     ctrl.close()
+
+def upload(client: Client):
+    request_upload(client.name, client.src, client.host, client.port)
 
 if __name__ == '__main__':
 
