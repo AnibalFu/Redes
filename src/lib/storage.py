@@ -1,4 +1,3 @@
-from attr import dataclass
 from pickle import load as load_pickle, dump as dump_pickle
 
 class StorageError(Exception): ...
@@ -31,6 +30,3 @@ class Storage:
     def persist(self):
         with open(self.data_path, 'wb') as f:
             dump_pickle(self.data, f)
-
-        
-    
