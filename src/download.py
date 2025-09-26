@@ -1,13 +1,17 @@
 
+from asyncio.trsock import _RetAddress
 from socket import socket, AF_INET, SOCK_DGRAM
 from argparse import ArgumentParser, Namespace, RawDescriptionHelpFormatter
 
 from lib.client import Client
 from lib.datagram_sending import send_bye, send_hello, send_request
-from lib.flags import USER_FLAGS
-from lib.protocolo_amcgf import FLAG_MF, VER_SW, Datagrama, MsgType, make_ack, make_bye, make_hello, make_req_download
+from lib.protocolo_amcgf import FLAG_MF, VER_SW, Datagrama, MsgType, make_ack, make_req_download
+
+BUF = 4096
 
 def define_flags():
+    """Define command line flags for the download client."""
+    
     parser = ArgumentParser(description='Download file program', formatter_class=RawDescriptionHelpFormatter)
 
     parser.add_argument('-v', '--verbose', required=False, action='store_true', help='increase output verbosity')
@@ -21,6 +25,8 @@ def define_flags():
     return parser
 
 def process_args(args: Namespace):
+    """Process command line arguments and return a configured Client instance."""
+    
     client = Client()
     
     client.verbose = args.verbose
@@ -33,70 +39,75 @@ def process_args(args: Namespace):
 
     return client
 
-def download(client: Client):
-    request_download(client.name, client.host, client.port)
-
-def request_download(filename: str, host: str, port: int):
-    print(f"Solicitando descarga de '{filename}' desde {host}:{port}")
-
-    SERVER = (host, port)
-    BUF = 4096
-
-    ctrl = socket(AF_INET, SOCK_DGRAM)
-
-    # 1. HELLO
-    send_hello(ctrl, SERVER, BUF)
-
-    # 2. DOWNLOAD
-    send_request(make_req_download, ctrl, SERVER, filename)
-    print("Recibido OK para DOWNLOAD")
-
-    # 3. Empieza a llegar la transferencia de datos
-    # (podemos negociar el puerto aca si queremos)
-    receive_content(ctrl, SERVER)
-
-    # FIN
-    send_bye(ctrl, SERVER, BUF)
-    ctrl.close()
-
-def receive_content(ctrl, SERVER):
+def download_file(addr: _RetAddress, src: str):
+    transfer_socket = socket(AF_INET, SOCK_DGRAM)
     expected_seq = 0
+    
     while True:
-        print("Por recibir...")
-        data, _ = ctrl.recvfrom(4096)
+        data, _ = transfer_socket.recvfrom(BUF)
         # sender = (SERVER[0], sender_address[1]), cuando tengamos la concurrencia
+        
         try:
-            datagrama = Datagrama.decode(data)
-        except Exception as e:
-            print(f"Error al decodificar datagrama: {e}")
-            continue
+            datagram = Datagrama.decode(data)
+        except Exception:
+            raise
 
-        if datagrama.typ == MsgType.DATA:
+        if datagram.typ == MsgType.DATA:
             if expected_seq == 0:
-                expected_seq = datagrama.seq
-            data = datagrama.payload
-            print(f"Recibido {data}")
-            print(f"Recibido DATA con seq {datagrama.seq}")
-            # Enviar ACK
-            ack = make_ack(acknum=expected_seq + 1, ver=VER_SW)
-            ctrl.sendto(ack.encode(), SERVER)
-            print(f"Enviado ACK {expected_seq + 1}")
-            if not (datagrama.flags & FLAG_MF):
+                expected_seq = datagram.seq
+
+            payload = datagram.payload
+            with open(src, "ab") as file:
+                file.write(payload)
+            
+            try:
+                encoded = make_ack(acknum=expected_seq + 1, ver=VER_SW).encode()
+            except Exception:
+                raise
+            
+            transfer_socket.sendto(encoded, addr)
+
+            if not (datagram.flags & FLAG_MF):
                 print("Archivo recibido completo")
                 break
-            if datagrama.seq == expected_seq:
+            if datagram.seq == expected_seq:
                 expected_seq += 1
 
         else:
-            print(f"Mensaje inesperado: {datagrama.pretty_print()}")
+            print(f"Mensaje inesperado: {datagram.pretty_print()}")
             continue
 
+    try:
+        send_bye(transfer_socket, addr, BUF)
+    except Exception:
+        raise
+    finally:
+        transfer_socket.close()
+
+def download(client: Client):
+    SERVER = (client.host, client.port)
+    
+    req_socket = socket(AF_INET, SOCK_DGRAM)
+
+    try:
+        send_hello(sender_socket=req_socket, addr=SERVER, bufsize=BUF, proto=client.protocol)
+    except Exception as e:
+        print(f"Error: Error during HELLO: {e}")
+        req_socket.close()
+        return
+
+    try:
+        addr = send_request(make_request=make_req_download, sender_socket=req_socket, addr=SERVER, filename=client.name)
+    except Exception as e:
+        print(f"Error: Error during REQUEST_DOWNLOAD: {e}")
+        req_socket.close()
+        return
+
+    download_file(addr=addr, src=client.src)
+    req_socket.close()
 
 if __name__ == "__main__":
-    
     parser = define_flags()
     args = parser.parse_args()
-    
-    client = process_args(args)
-    
-    download(client=client)
+        
+    download(client=process_args(args))

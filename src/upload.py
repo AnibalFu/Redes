@@ -1,12 +1,17 @@
+from asyncio.trsock import _RetAddress
 from socket import socket, AF_INET, SOCK_DGRAM
 from argparse import ArgumentParser, RawDescriptionHelpFormatter, Namespace
 
-from lib.datagram_sending import send_bye, send_content, send_hello, send_request
+from lib.datagram_sending import send_bye, send_hello, send_request
 from lib.protocolo_amcgf import *
 from lib.client import Client
-from lib.flags import USER_FLAGS
+
 MSS = 32
+BUF = 16
+
 def define_flags():
+    """Define command line flags."""
+    
     parser = ArgumentParser(description='Upload file program', formatter_class=RawDescriptionHelpFormatter)
     
     parser.add_argument('-v', '--verbose', required=False, action='store_true', help='increase output verbosity')
@@ -20,6 +25,8 @@ def define_flags():
     return parser
 
 def process_args(args: Namespace):
+    """Process command line arguments and return a configured Client instance."""
+
     client = Client()
 
     client.verbose = args.verbose
@@ -32,65 +39,78 @@ def process_args(args: Namespace):
 
     return client
 
-def request_upload(filename: str, src_path: str, host: str, port: int, chunk_size=MSS):
-    SERVER = (host, port)
-    BUF = 16
-
-    ctrl = socket(AF_INET, SOCK_DGRAM)
-
-    # 1. REQUEST_UPLOAD directo
-    request = make_req_upload(filename, 0, VER_SW)
-    ctrl.sendto(request.encode(), SERVER)
-
-    # 2. Espera OK desde el nuevo puerto y guarda la dirección
-    data, new_server_addr = ctrl.recvfrom(BUF)
-    datagrama = Datagrama.decode(data)
-    if datagrama.typ != MsgType.OK:
-        print("Error: no se recibió OK")
-        ctrl.close()
-        return
-
-    print(f"Recibido OK para UPLOAD, nueva dirección: {new_server_addr}")
-
-    # 3. Transferencia de datos por la nueva dirección, leyendo por partes
-    transfer_sock = socket(AF_INET, SOCK_DGRAM)
-    seq = 0
-    with open(src_path, "rb") as f:
+def upload_file(path: str, addr: _RetAddress, chunk_size: int = MSS):
+    transfer_socket = socket(AF_INET, SOCK_DGRAM)
+    seq_number = 0
+    
+    with open(path, "rb") as file:
         while True:
-            chunk = f.read(chunk_size)
+            chunk = file.read(chunk_size)
             if not chunk:
                 break
-            mf = f.peek(1) != b'' if hasattr(f, 'peek') else True  # MF si hay más datos
-            datagrama = make_data(seq=seq, chunk=chunk, ver=VER_SW, mf=mf)
-            encoded = datagrama.encode()
+            
+            more_fragments = file.peek(1) != b'' if hasattr(file, 'peek') else True  # MF si hay más datos
+            
+            try:
+                encoded = make_data(seq=seq_number, chunk=chunk, ver=VER_SW, mf=more_fragments).encode()
+            except Exception:
+                raise
+
             ack_ok = False
             while not ack_ok:
-                transfer_sock.sendto(encoded, new_server_addr)
-                print(f"Enviado DATA con seq {seq}, MF={mf}")
+                transfer_socket.sendto(encoded, addr)
+                
+                print(f"Sending DATA with sequence number {seq_number}, MF={more_fragments}")
                 try:
-                    data, _ = transfer_sock.recvfrom(BUF)
-                    datagram = Datagrama.decode(data)
-                    if datagram.typ == MsgType.ACK and datagram.ack == seq + 1:
+                    data, _ = transfer_socket.recvfrom(BUF)
+                    
+                    try:
+                        datagram = Datagrama.decode(data)
+                    except Exception:
+                        raise
+                    
+                    if datagram.typ == MsgType.ACK and datagram.ack == seq_number + 1:
                         print(f"ACK correcto recibido: {datagram}")
                         ack_ok = True
                     else:
-                        print(f"ACK incorrecto (esperaba {seq+1}), reenviando DATA seq {seq}")
+                        print(f"ACK incorrecto (esperaba {seq_number+1}), reenviando DATA seq {seq_number}")
+                
                 except TimeoutError:
-                    print(f"Timeout esperando ACK para seq {seq}, reenviando DATA")
-            seq += 1
+                    print(f"Timeout esperando ACK para seq {seq_number}, reenviando DATA")
+            
+            seq_number += 1
 
-    # FIN
-    send_bye(transfer_sock, new_server_addr, BUF)
-    transfer_sock.close()
-    ctrl.close()
+    try:
+        send_bye(transfer_socket, addr, BUF)
+    except Exception as e:
+        print(f"Error: Error during BYE: {e}")
+    finally:
+        transfer_socket.close()
 
 def upload(client: Client):
-    request_upload(client.name, client.src, client.host, client.port)
+    SERVER = (client.host, client.port)
+
+    req_socket = socket(AF_INET, SOCK_DGRAM)
+
+    try:
+        send_hello(sender_socket=req_socket, addr=SERVER, bufsize=BUF, proto=client.protocol)
+    except Exception as e:
+        print(f"Error: Error during HELLO: {e}")
+        req_socket.close()
+        return
+    
+    try:
+        addr = send_request(make_request=make_req_upload, sender_socket=req_socket, addr=SERVER, filename=client.name)
+    except Exception as e:
+        print(f"Error: Error during REQUEST_UPLOAD: {e}")
+        req_socket.close()
+        return
+
+    upload_file(path=client.src, server_address=addr)
+    req_socket.close()
 
 if __name__ == '__main__':
-
     parser = define_flags()
     args = parser.parse_args()
 
-    client = process_args(args)
-    upload(client=client)
+    upload(client=process_args(args))
