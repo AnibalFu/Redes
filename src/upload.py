@@ -42,8 +42,6 @@ def upload_file(path: str, addr: tuple[str, int], chunk_size: int = MSS):
     transfer_socket = socket(AF_INET, SOCK_DGRAM)
     seq_number = 0
     
-    print(f"Starting file upload to {addr}...")
-    print(f"Reading from file: {path}")
     with open(path, "rb") as file:
         while True:
             chunk = file.read(chunk_size)
@@ -61,7 +59,6 @@ def upload_file(path: str, addr: tuple[str, int], chunk_size: int = MSS):
             while not ack_ok:
                 transfer_socket.sendto(encoded, addr)
                 
-                print(f"Sending DATA with sequence number {seq_number}, MF={more_fragments}")
                 try:
                     data, _ = transfer_socket.recvfrom(BUF)
                     
