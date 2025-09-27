@@ -19,7 +19,7 @@ class FileHandler:
         file_path = os.path.join(self.data_path, filename)
         offset = datagram.seq * chunk_size
 
-        with open(file_path, "r+b" if os.path.exists(file_path) else "wb") as f:
+        with open(file_path, "r+b" if self.is_filename_used(filename) else "wb") as f:
             f.seek(offset)
             f.write(datagram.payload)
 
