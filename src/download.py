@@ -1,10 +1,8 @@
-
-from asyncio.trsock import _RetAddress
 from socket import socket, AF_INET, SOCK_DGRAM
 from argparse import ArgumentParser, Namespace, RawDescriptionHelpFormatter
 
 from lib.client import Client
-from lib.datagram_sending import send_bye, send_hello, send_request
+from lib.datagram_sending import send_bye, send_request
 from lib.protocolo_amcgf import FLAG_MF, VER_SW, Datagrama, MsgType, make_ack, make_req_download
 
 BUF = 4096
@@ -39,7 +37,7 @@ def process_args(args: Namespace):
 
     return client
 
-def download_file(addr: _RetAddress, src: str):
+def download_file(addr: tuple[str, int], src: str):
     transfer_socket = socket(AF_INET, SOCK_DGRAM)
     expected_seq = 0
     
@@ -90,14 +88,7 @@ def download(client: Client):
     req_socket = socket(AF_INET, SOCK_DGRAM)
 
     try:
-        send_hello(sender_socket=req_socket, addr=SERVER, bufsize=BUF, proto=client.protocol)
-    except Exception as e:
-        print(f"Error: Error during HELLO: {e}")
-        req_socket.close()
-        return
-
-    try:
-        addr = send_request(make_request=make_req_download, sender_socket=req_socket, addr=SERVER, filename=client.name)
+        addr = send_request(make_request=make_req_download, sender_socket=req_socket, addr=SERVER, client=client)
     except Exception as e:
         print(f"Error: Error during REQUEST_DOWNLOAD: {e}")
         req_socket.close()

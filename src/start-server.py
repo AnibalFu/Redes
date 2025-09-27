@@ -1,7 +1,5 @@
-from asyncio.trsock import _RetAddress
 import sys
 import threading
-import random
 
 from socket import socket, AF_INET, SOCK_DGRAM
 from signal import SIGINT, signal
@@ -51,7 +49,8 @@ def process_args(args: Namespace):
     
     return server
 
-def handle_upload(handle_socket: socket, client_addr: _RetAddress):
+def handle_upload(handle_socket: socket, client_addr: tuple[str, int]):
+    filedata = b''
     ok = make_ok(ver=VER_SW)
     
     # Hay que ver que hacer en este caso de error.
@@ -62,29 +61,23 @@ def handle_upload(handle_socket: socket, client_addr: _RetAddress):
         return
     
     handle_socket.sendto(encoded, client_addr)
-    print(f"Upload handler en puerto {handle_socket.getsockname()[1]} para {client_addr}")
     
-    filedata = b""
     while True:
         data, client_addr = handle_socket.recvfrom(4096)
 
-        # Hay que ver que hacer en este caso de error.
         try:
             datagram = Datagrama.decode(data)
-        except Exception as e:
-            print(f"Error: Error while trying to decode Datagram: {e}")
-            return
+        except Exception:
+            continue            
 
         if datagram.typ == MsgType.DATA:
             filedata += datagram.payload
             ack = make_ack(acknum=datagram.seq + 1, ver=VER_SW)
 
-            # Hay que ver que hacer en este caso de error.
             try:
                 encoded = ack.encode()
-            except Exception as e:
-                print(f"Error: Error while trying to encode ACK Datagram: {e}")
-                return
+            except Exception:
+                continue
 
             handle_socket.sendto(encoded, client_addr)
 
@@ -92,23 +85,19 @@ def handle_upload(handle_socket: socket, client_addr: _RetAddress):
                 print("Archivo recibido completo, esperando BYE...")
         
         elif datagram.typ == MsgType.BYE:
-            print("BYE recibido, guardando archivo y respondiendo OK")
             ok = make_ok(ver=VER_SW)
 
-            # Hay que ver que hacer en este caso de error.
             try:
                 encoded = ok.encode()
-            except Exception as e:
-                print(f"Error: Error while trying to encode OK Datagram: {e}")
-                return
+            except Exception:
+                continue
 
             handle_socket.sendto(encoded, client_addr)
             break
     
-    print(filedata)
     handle_socket.close()
 
-def handle_download(handle_socket: socket, client_addr: _RetAddress, filename: str):
+def handle_download(handle_socket: socket, client_addr: tuple[str, int], filename: str):
     ok = make_ok(ver=VER_SW)
 
     try:
@@ -135,14 +124,17 @@ def run(server: Server):
 
     while True:
         data, client_addr = server_socket.recvfrom(4096)
+
         if len(data) < HDR_SIZE:
             print("Control message received:", data)
             continue
            
         try:
             datagram = Datagrama.decode(data)
-        except Exception as e:
-            raise
+        except Exception:
+            continue
+
+        server.protocol = datagram.proto
 
         if datagram.typ == MsgType.REQUEST_UPLOAD:
             handle_socket = socket(AF_INET, SOCK_DGRAM)

@@ -1,8 +1,7 @@
-from asyncio.trsock import _RetAddress
 from socket import socket, AF_INET, SOCK_DGRAM
 from argparse import ArgumentParser, RawDescriptionHelpFormatter, Namespace
 
-from lib.datagram_sending import send_bye, send_hello, send_request
+from lib.datagram_sending import send_bye, send_request
 from lib.protocolo_amcgf import *
 from lib.client import Client
 
@@ -39,10 +38,12 @@ def process_args(args: Namespace):
 
     return client
 
-def upload_file(path: str, addr: _RetAddress, chunk_size: int = MSS):
+def upload_file(path: str, addr: tuple[str, int], chunk_size: int = MSS):
     transfer_socket = socket(AF_INET, SOCK_DGRAM)
     seq_number = 0
     
+    print(f"Starting file upload to {addr}...")
+    print(f"Reading from file: {path}")
     with open(path, "rb") as file:
         while True:
             chunk = file.read(chunk_size)
@@ -89,24 +90,17 @@ def upload_file(path: str, addr: _RetAddress, chunk_size: int = MSS):
 
 def upload(client: Client):
     SERVER = (client.host, client.port)
-
+    
     req_socket = socket(AF_INET, SOCK_DGRAM)
 
     try:
-        send_hello(sender_socket=req_socket, addr=SERVER, bufsize=BUF, proto=client.protocol)
-    except Exception as e:
-        print(f"Error: Error during HELLO: {e}")
-        req_socket.close()
-        return
-    
-    try:
-        addr = send_request(make_request=make_req_upload, sender_socket=req_socket, addr=SERVER, filename=client.name)
+        addr = send_request(make_request=make_req_upload, sender_socket=req_socket, addr=SERVER, client=client)
     except Exception as e:
         print(f"Error: Error during REQUEST_UPLOAD: {e}")
         req_socket.close()
         return
 
-    upload_file(path=client.src, server_address=addr)
+    upload_file(path=client.src + client.name, addr=addr)
     req_socket.close()
 
 if __name__ == '__main__':
