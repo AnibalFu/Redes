@@ -1,8 +1,8 @@
-from asyncio.trsock import _RetAddress
 from socket import socket
 from pyparsing import Callable
 
-from lib.protocolo_amcgf import VER_SW, Datagrama, MsgType, make_bye, make_data, make_hello
+from lib.client import Client
+from lib.protocolo_amcgf import VER_GBN, VER_SW, Datagrama, MsgType, make_bye, make_data, make_hello
 
 def send_content(sender_socket, receiver_addr, content, chunk_size, timeout=2):
     sender_socket.settimeout(timeout)
@@ -29,30 +29,13 @@ def send_content(sender_socket, receiver_addr, content, chunk_size, timeout=2):
         seq += 1
     sender_socket.settimeout(None)  # Restablece el timeout
 
-def send_hello(sender_socket: socket, addr: _RetAddress, bufsize: int, proto: str):
-    """Envía un datagrama HELLO y espera un HELLO de respuesta."""
-    
-    try:
-        encoded = make_hello(proto=proto).encode()
-    except Exception:
-        raise
-
-    sender_socket.sendto(encoded, addr)
-
-    data, _ = sender_socket.recvfrom(bufsize)
-    
-    try:
-        datagram = Datagrama.decode(data)
-    except Exception:
-        raise
-
-    assert datagram.typ == MsgType.HELLO, "Expecting HELLO ACK"
-
-def send_request(make_request: Callable, sender_socket: socket, addr: _RetAddress, filename: str):
+def send_request(make_request: Callable, sender_socket: socket, addr: tuple[str, int], client: Client):
     """Envía un datagrama REQUEST y espera un OK de respuesta. Devuelve la nueva dirección (ip, puerto) del servidor."""
-        
+    
+    proto = VER_SW if client.protocol == 'SW' else VER_GBN
+
     try:
-        encoded = make_request(filename, 0, VER_SW).encode()
+        encoded = make_request(client.name, 0, proto).encode()
     except Exception:
         raise
 
@@ -69,7 +52,7 @@ def send_request(make_request: Callable, sender_socket: socket, addr: _RetAddres
     
     return new_addr
 
-def send_bye(sender_socket: socket, receiver_addr: _RetAddress, bufsize: int):
+def send_bye(sender_socket: socket, receiver_addr: tuple[str, int], bufsize: int):
     """Envía un datagrama BYE y espera un OK de respuesta."""
         
     try:
