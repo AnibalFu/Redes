@@ -11,6 +11,7 @@ from lib.datagram_sending import send_content
 from lib.server import Server
 from lib.flags import SERVER_FLAGS
 from lib.protocolo_amcgf import *
+from lib.fileHandler import FileHandler
 
 def sigint_handler(_: int, frame: FrameType | None):
     server_socket = frame.f_locals['server_socket']
@@ -37,19 +38,19 @@ def process_args(args: Namespace):
     server.quiet = args.quiet
     server.host = args.host if args.host else server.host
     server.port = args.port if args.port else server.port    
-    server.storage = args.storage if args.storage else server.storage
+    server.fileHandler = FileHandler(args.storage) if args.storage else server.fileHandler
+
     return server
 
-def handle_upload(sock, client_addr):
+def handle_upload(sock, client_addr, fileHandler, filename):
     ok = make_ok(ver=VER_SW)
     sock.sendto(ok.encode(), client_addr)
     print(f"Upload handler en puerto {sock.getsockname()[1]} para {client_addr}")
-    filedata = b""
     while True:
         data, addr = sock.recvfrom(4096)
         datagrama = Datagrama.decode(data)
         if datagrama.typ == MsgType.DATA:
-            filedata += datagrama.payload
+            fileHandler.save_datagram(filename, datagrama, MSS)
             ack = make_ack(acknum=datagrama.seq + 1, ver=VER_SW)
             sock.sendto(ack.encode(), addr)
             if not (datagrama.flags & FLAG_MF):
@@ -59,15 +60,13 @@ def handle_upload(sock, client_addr):
             ok = make_ok(ver=VER_SW)
             sock.sendto(ok.encode(), addr)
             break
-    print(filedata)
     sock.close()
 
-def handle_download(sock, client_addr, filename):
+def handle_download(sock, client_addr, filename, fileHandler):
     ok = make_ok(ver=VER_SW)
     sock.sendto(ok.encode(), client_addr)  # Enviar OK desde el nuevo socket
     print(f"Download handler en puerto {sock.getsockname()[1]} para {client_addr}")
-    with open(filename, "rb") as f:
-        content = f.read()
+    content = fileHandler.get_file(filename)  
     send_content(sock, client_addr, content, chunk_size=6)
     sock.close()
 
@@ -90,16 +89,17 @@ def run(server: Server):
 
         if datagrama.typ == MsgType.REQUEST_UPLOAD:
             print("UPLOAD recibido")
+            filename = datagrama.payload.decode().split('=', maxsplit=1)[1]
             sock = socket(AF_INET, SOCK_DGRAM)
             sock.bind(('', 0))  # Puerto libre asignado por el SO
-            threading.Thread(target=handle_upload, args=(sock, sender_address), daemon=True).start()
+            threading.Thread(target=handle_upload, args=(sock, sender_address, server.fileHandler, filename), daemon=True).start()
 
         elif datagrama.typ == MsgType.REQUEST_DOWNLOAD:
             print("DOWNLOAD recibido")
             filename = datagrama.payload.decode().split('=', maxsplit=1)[1]
             sock = socket(AF_INET, SOCK_DGRAM)
             sock.bind(('', 0))  # Puerto libre asignado por el SO
-            threading.Thread(target=handle_download, args=(sock, sender_address, filename), daemon=True).start()
+            threading.Thread(target=handle_download, args=(sock, sender_address, filename, server.fileHandler), daemon=True).start()
 
     server_socket.close()
 
