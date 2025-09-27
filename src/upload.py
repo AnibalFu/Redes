@@ -54,7 +54,7 @@ def request_upload(filename: str, src_path: str, host: str, port: int, chunk_siz
     # 3. Transferencia de datos por la nueva dirección, leyendo por partes
     # transfer_sock = socket(AF_INET, SOCK_DGRAM)
     seq = 0
-    with open(src_path + "prueba.bin", "rb") as f:
+    with open(src_path) as f:
         while True:
             chunk = f.read(chunk_size)
             if not chunk:
