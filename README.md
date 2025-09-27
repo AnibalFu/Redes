@@ -20,3 +20,4 @@
 
 [Camila Figueroa](https://github.com/camilaFigueroaCillo)
 
+[Giuliana Pazos](https://github.com/giulianapazos)
