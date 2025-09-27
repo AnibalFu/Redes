@@ -47,8 +47,11 @@ FLAG_MF  = 0x4000
 # Convencion: ack == 0 => no hay ACK piggyback
 ACK_NONE = 0
 
-# Payload
+# Payload key
 PAYLOAD_DATA_KEY = "chunk"
+PAYLOAD_FILENAME_KEY = "filename"
+PAYLOAD_ERR_MSG_KEY = "message"
+
 
 class MsgType(IntEnum):
     REQUEST_UPLOAD   = 0
@@ -254,17 +257,17 @@ def payload_decode(b: bytes) -> dict:
 # -------------------- API --------------------
 
 def make_req_upload(filename: str, ver: int) -> Datagrama:
-    return Datagrama(ver, MsgType.REQUEST_UPLOAD, payload=payload_encode({"filename": filename}))
+    return Datagrama(ver, MsgType.REQUEST_UPLOAD, payload=payload_encode({PAYLOAD_FILENAME_KEY: filename}))
 
 def make_req_download(filename: str, ver: int) -> Datagrama:
-    return Datagrama(ver, MsgType.REQUEST_DOWNLOAD, payload=payload_encode({"filename": filename}))
+    return Datagrama(ver, MsgType.REQUEST_DOWNLOAD, payload=payload_encode({PAYLOAD_FILENAME_KEY: filename}))
 
 # OK / ERR con piggyback opcional de ACK (ack != 0 => ACK valido y se encendera FLAG_ACK)
 def make_ok(extra: dict | None = None, ver: int = VER_SW, ack: int = ACK_NONE) -> Datagrama:
     return Datagrama(ver, MsgType.OK, ack=ack, payload=payload_encode(extra or {}))
 
-def make_err(code: str, msg: str, ver: int = VER_SW, ack: int = ACK_NONE) -> Datagrama:
-    return Datagrama(ver, MsgType.ERR, ack=ack, payload=payload_encode({"code": code, "message": msg}))
+def make_err(msg: str, ver: int = VER_SW, ack: int = ACK_NONE) -> Datagrama:
+    return Datagrama(ver, MsgType.ERR, ack=ack, payload=payload_encode({PAYLOAD_ERR_MSG_KEY: msg}))
 
 # DATA con seq obligatorio y ACK piggyback opcional
 def make_data(seq: int, chunk: bytes, ver: int, ack: int = ACK_NONE, mf: bool = False) -> Datagrama:
