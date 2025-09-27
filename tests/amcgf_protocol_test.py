@@ -20,7 +20,6 @@ from lib.protocolo_amcgf import (
     payload_encode, payload_decode,
     inet_checksum,
     FrameTooBig, Truncated, BadChecksum,
-    make_hello,
     make_req_upload, make_req_download,
     make_ok, make_err, make_data, make_ack, make_bye,
 )
