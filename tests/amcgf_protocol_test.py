@@ -15,7 +15,7 @@ import struct
 
 from lib.protocolo_amcgf import (
     Datagrama, MsgType,
-    HDR_FMT, HDR_SIZE, VER_SW, VER_GBN, MSS, MAX_FRAME,
+    HDR_FMT, HDR_SIZE, VER_SW, VER_GBN, MSS, MTU,
     FLAG_ACK, FLAG_MF, 
     payload_encode, payload_decode,
     inet_checksum,
@@ -188,7 +188,7 @@ def test13_make_data_ack_bye():
 
 def test14_max_frame_constant():
     # Constante MAX_FRAME coherente con definicion (header + MSS).
-    assert MAX_FRAME == HDR_SIZE + MSS
+    assert MTU == HDR_SIZE + MSS
 
 def test15_mf_flag_behavior():
     # DATA con mf=True debe encender FLAG_MF
