@@ -70,7 +70,6 @@ def upload_file(path: str, addr: _RetAddress, chunk_size: int = MSS):
                         raise
                     
                     if datagram.typ == MsgType.ACK and datagram.ack == seq_number + 1:
-                        print(f"ACK correcto recibido: {datagram}")
                         ack_ok = True
                     else:
                         print(f"ACK incorrecto (esperaba {seq_number+1}), reenviando DATA seq {seq_number}")

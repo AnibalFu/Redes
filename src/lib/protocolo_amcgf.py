@@ -16,7 +16,7 @@ VER_SW  = 1  # Stop-and-Wait
 VER_GBN = 2  # Go-Back-N
 
 # MTU de payload (recomendado por el TP)
-MSS = 1200
+MSS = 1024
 MAX_FRAME = HDR_SIZE + MSS
 
 # Flags de 16 bits
