@@ -1,5 +1,8 @@
-from lib.protocolo_amcgf import VER_SW, Datagrama, MsgType, make_bye, make_data, make_hello
+from socket import socket
+from pyparsing import Callable
 
+from lib.client import Client
+from lib.protocolo_amcgf import VER_GBN, VER_SW, Datagrama, MsgType, make_bye, make_data, make_hello
 
 def send_content(sender_socket, receiver_addr, content, chunk_size, timeout=2):
     sender_socket.settimeout(timeout)
@@ -26,29 +29,45 @@ def send_content(sender_socket, receiver_addr, content, chunk_size, timeout=2):
         seq += 1
     sender_socket.settimeout(None)  # Restablece el timeout
 
+def send_request(make_request: Callable, sender_socket: socket, addr: tuple[str, int], client: Client):
+    """Envía un datagrama REQUEST y espera un OK de respuesta. Devuelve la nueva dirección (ip, puerto) del servidor."""
+    
+    proto = VER_SW if client.protocol == 'SW' else VER_GBN
 
-def send_hello(sender_socket, receiver_addr, buf):
-    hello = make_hello(proto="SW")
-    sender_socket.sendto(hello.encode(), receiver_addr)
-    ans, _ = sender_socket.recvfrom(buf)
-    resp = Datagrama.decode(ans)
-    assert resp.typ == MsgType.HELLO, "Esperaba HELLO ACK"
-    print("Recibido HELLO ACK")
+    try:
+        encoded = make_request(client.name, 0, proto).encode()
+    except Exception:
+        raise
 
+    sender_socket.sendto(encoded, addr)
 
-def send_request(request_maker, sender_socket, receiver_addr, filename):
-    request = request_maker(filename, 0, VER_SW)
-    sender_socket.sendto(request.encode(), receiver_addr)
-    ans, _ = sender_socket.recvfrom(4096)
-    resp = Datagrama.decode(ans)
-    assert resp.typ == MsgType.OK, "Esperaba OK tras REQUEST"
+    data, new_addr = sender_socket.recvfrom(4096)
 
+    try:
+        datagram = Datagrama.decode(data)
+    except Exception:
+        raise
 
-def send_bye(sender_socket, receiver_addr, buf):
-    bye = make_bye(VER_SW)
-    sender_socket.sendto(bye.encode(), receiver_addr)
-    ans, _ = sender_socket.recvfrom(buf)
-    resp = Datagrama.decode(ans)
-    assert resp.typ == MsgType.OK, "Esperaba OK tras BYE"
-    print("Transferencia finalizada correctamente")
+    assert datagram.typ == MsgType.OK, "Expecting OK after REQUEST"
+    
+    return new_addr
 
+def send_bye(sender_socket: socket, receiver_addr: tuple[str, int], bufsize: int):
+    """Envía un datagrama BYE y espera un OK de respuesta."""
+        
+    try:
+        encoded = make_bye(VER_SW).encode()
+    except Exception:
+        raise
+    
+    sender_socket.sendto(encoded, receiver_addr)
+
+    data, _ = sender_socket.recvfrom(bufsize)
+    
+    try:
+        datagram = Datagrama.decode(data)
+    except Exception:
+        raise
+
+    assert datagram.typ == MsgType.OK, "Expecting OK after BYE"
+    sender_socket.close()
