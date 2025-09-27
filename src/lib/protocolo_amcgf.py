@@ -17,7 +17,7 @@ VER_GBN = 2  # Go-Back-N
 
 # MTU de payload (recomendado por el TP)
 MSS = 1200
-MAX_FRAME = HDR_SIZE + MSS
+MTU = HDR_SIZE + MSS
 
 # Flags de 16 bits
 # Se usa el bit mas alto (0x8000) como "ACK flag" (0x8000 = 1000 0000 0000 0000)

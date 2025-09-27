@@ -45,18 +45,21 @@ def request_download(filename: str, host: str, port: int):
     ctrl = socket(AF_INET, SOCK_DGRAM)
 
     # 1. HELLO
-    send_hello(ctrl, SERVER, BUF)
+    # send_hello(ctrl, SERVER, BUF)
 
     # 2. DOWNLOAD
-    send_request(make_req_download, ctrl, SERVER, filename)
+    # Server me responde por el nuevo socket
+    new_server_addr = send_request(make_req_download, ctrl, SERVER, filename)
     print("Recibido OK para DOWNLOAD")
-
+    print(f"Socket: {ctrl}")
+    print(f"Nueva dirección: {new_server_addr}")
     # 3. Empieza a llegar la transferencia de datos
     # (podemos negociar el puerto aca si queremos)
-    receive_content(ctrl, SERVER)
+    f = socket(AF_INET, SOCK_DGRAM)
+    receive_content(ctrl, new_server_addr)
 
     # FIN
-    send_bye(ctrl, SERVER, BUF)
+    send_bye(ctrl, new_server_addr, BUF)
     ctrl.close()
 
 def receive_content(ctrl, SERVER):

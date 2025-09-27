@@ -97,9 +97,10 @@ def run(server: Server):
         elif datagrama.typ == MsgType.REQUEST_DOWNLOAD:
             print("DOWNLOAD recibido")
             filename = datagrama.payload.decode().split('=', maxsplit=1)[1]
+            print(f"Filename: {filename}")
             sock = socket(AF_INET, SOCK_DGRAM)
             sock.bind(('', 0))  # Puerto libre asignado por el SO
-            threading.Thread(target=handle_download, args=(sock, sender_address, filename), daemon=True).start()
+            threading.Thread(target=handle_download, args=(sock, sender_address, "data/" + filename), daemon=True).start()
 
     server_socket.close()
 

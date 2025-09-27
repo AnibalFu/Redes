@@ -1,11 +1,10 @@
 from socket import socket, AF_INET, SOCK_DGRAM
 from argparse import ArgumentParser, RawDescriptionHelpFormatter, Namespace
 
-from lib.datagram_sending import send_bye, send_content, send_hello, send_request
+from lib.datagram_sending import send_bye
 from lib.protocolo_amcgf import *
 from lib.client import Client
-from lib.flags import USER_FLAGS
-MSS = 32
+
 def define_flags():
     parser = ArgumentParser(description='Upload file program', formatter_class=RawDescriptionHelpFormatter)
     
@@ -53,9 +52,9 @@ def request_upload(filename: str, src_path: str, host: str, port: int, chunk_siz
     print(f"Recibido OK para UPLOAD, nueva dirección: {new_server_addr}")
 
     # 3. Transferencia de datos por la nueva dirección, leyendo por partes
-    transfer_sock = socket(AF_INET, SOCK_DGRAM)
+    # transfer_sock = socket(AF_INET, SOCK_DGRAM)
     seq = 0
-    with open(src_path, "rb") as f:
+    with open(src_path + "prueba.bin", "rb") as f:
         while True:
             chunk = f.read(chunk_size)
             if not chunk:
@@ -65,10 +64,10 @@ def request_upload(filename: str, src_path: str, host: str, port: int, chunk_siz
             encoded = datagrama.encode()
             ack_ok = False
             while not ack_ok:
-                transfer_sock.sendto(encoded, new_server_addr)
+                ctrl.sendto(encoded, new_server_addr)
                 print(f"Enviado DATA con seq {seq}, MF={mf}")
                 try:
-                    data, _ = transfer_sock.recvfrom(BUF)
+                    data, _ = ctrl.recvfrom(BUF)
                     datagram = Datagrama.decode(data)
                     if datagram.typ == MsgType.ACK and datagram.ack == seq + 1:
                         print(f"ACK correcto recibido: {datagram}")
@@ -80,9 +79,9 @@ def request_upload(filename: str, src_path: str, host: str, port: int, chunk_siz
             seq += 1
 
     # FIN
-    send_bye(transfer_sock, new_server_addr, BUF)
-    transfer_sock.close()
+    send_bye(ctrl, new_server_addr, BUF)
     ctrl.close()
+
 
 def upload(client: Client):
     request_upload(client.name, client.src, client.host, client.port)
