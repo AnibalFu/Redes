@@ -3,9 +3,8 @@ from socket import socket, AF_INET, SOCK_DGRAM
 from argparse import ArgumentParser, Namespace, RawDescriptionHelpFormatter
 
 from lib.client import Client
-from lib.datagram_sending import send_bye, send_hello, send_request
-from lib.flags import USER_FLAGS
-from lib.protocolo_amcgf import FLAG_MF, VER_SW, Datagrama, MsgType, make_ack, make_bye, make_hello, make_req_download
+from lib.datagram_sending import send_bye, send_request
+from lib.protocolo_amcgf import FLAG_MF, VER_SW, Datagrama, MsgType, make_ack, make_req_download, payload_decode, PAYLOAD_DATA_KEY
 
 def define_flags():
     parser = ArgumentParser(description='Download file program', formatter_class=RawDescriptionHelpFormatter)
@@ -64,6 +63,7 @@ def request_download(filename: str, host: str, port: int):
 
 def receive_content(ctrl, SERVER):
     expected_seq = 0
+    res = b""
     while True:
         print("Por recibir...")
         data, _ = ctrl.recvfrom(4096)
@@ -77,7 +77,7 @@ def receive_content(ctrl, SERVER):
         if datagrama.typ == MsgType.DATA:
             if expected_seq == 0:
                 expected_seq = datagrama.seq
-            data = datagrama.payload
+            data = payload_decode(datagrama.payload)[PAYLOAD_DATA_KEY]
             print(f"Recibido {data}")
             print(f"Recibido DATA con seq {datagrama.seq}")
             # Enviar ACK
@@ -89,11 +89,13 @@ def receive_content(ctrl, SERVER):
                 break
             if datagrama.seq == expected_seq:
                 expected_seq += 1
-
+            res += data
         else:
-            print(f"Mensaje inesperado: {datagrama.pretty_print()}")
+            print(f"Mensaje inesperado: {datagrama}")
             continue
-
+    
+    print(res)  
+    
 
 if __name__ == "__main__":
     

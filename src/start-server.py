@@ -45,11 +45,12 @@ def handle_upload(sock, client_addr):
     sock.sendto(ok.encode(), client_addr)
     print(f"Upload handler en puerto {sock.getsockname()[1]} para {client_addr}")
     filedata = b""
+    
     while True:
         data, addr = sock.recvfrom(4096)
         datagrama = Datagrama.decode(data)
         if datagrama.typ == MsgType.DATA:
-            filedata += datagrama.payload
+            filedata += payload_decode(datagrama.payload)[PAYLOAD_DATA_KEY]
             ack = make_ack(acknum=datagrama.seq + 1, ver=VER_SW)
             sock.sendto(ack.encode(), addr)
             if not (datagrama.flags & FLAG_MF):
@@ -59,6 +60,7 @@ def handle_upload(sock, client_addr):
             ok = make_ok(ver=VER_SW)
             sock.sendto(ok.encode(), addr)
             break
+    # printer filedata en str
     print(filedata)
     sock.close()
 

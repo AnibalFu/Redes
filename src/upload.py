@@ -38,7 +38,7 @@ def request_upload(filename: str, src_path: str, host: str, port: int, chunk_siz
     ctrl = socket(AF_INET, SOCK_DGRAM)
 
     # 1. REQUEST_UPLOAD directo
-    request = make_req_upload(filename, 0, VER_SW)
+    request = make_req_upload(filename, VER_SW)
     ctrl.sendto(request.encode(), SERVER)
 
     # 2. Espera OK desde el nuevo puerto y guarda la dirección

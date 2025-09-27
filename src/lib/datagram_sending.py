@@ -1,4 +1,4 @@
-from lib.protocolo_amcgf import VER_SW, Datagrama, MsgType, make_bye, make_data, make_hello, make_ok
+from lib.protocolo_amcgf import VER_SW, Datagrama, MsgType, make_bye, make_data, make_ok
 
 
 def send_content(sender_socket, receiver_addr, content, chunk_size, timeout=2):
@@ -36,7 +36,7 @@ def send_content(sender_socket, receiver_addr, content, chunk_size, timeout=2):
 
 
 def send_request(request_maker, sender_socket, receiver_addr, filename):
-    request = request_maker(filename, 0, VER_SW)
+    request = request_maker(filename, VER_SW)
     sender_socket.sendto(request.encode(), receiver_addr)
     ans, new_server_addr = sender_socket.recvfrom(4096)
     resp = Datagrama.decode(ans)
