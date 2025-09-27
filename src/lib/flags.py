@@ -1,4 +1,4 @@
-from lib.client import PROTOCOL_GBN, PROTOCOL_SW, Client
+from lib.client import Client
 from lib.server import Server
 from lib.connection import Connection
 

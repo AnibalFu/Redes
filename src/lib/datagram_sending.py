@@ -1,4 +1,4 @@
-from lib.protocolo_amcgf import VER_SW, Datagrama, MsgType, make_bye, make_data, make_hello
+from lib.protocolo_amcgf import VER_SW, Datagrama, MsgType, make_bye, make_data, make_ok
 
 
 def send_content(sender_socket, receiver_addr, content, chunk_size, timeout=2):
@@ -24,24 +24,24 @@ def send_content(sender_socket, receiver_addr, content, chunk_size, timeout=2):
             except TimeoutError:
                 print(f"Timeout esperando ACK para seq {seq}, reenviando DATA")
         seq += 1
+    
+    data, _ = sender_socket.recvfrom(4096)
+    resp = Datagrama.decode(data)
+    assert resp.typ == MsgType.BYE, "Esperaba BYE tras DATA"
+    print("Transferencia finalizada correctamente")
+    ok = make_ok(ver=VER_SW)
+    sender_socket.sendto(ok.encode(), receiver_addr)
+    
     sender_socket.settimeout(None)  # Restablece el timeout
 
 
-def send_hello(sender_socket, receiver_addr, buf):
-    hello = make_hello(proto="SW")
-    sender_socket.sendto(hello.encode(), receiver_addr)
-    ans, _ = sender_socket.recvfrom(buf)
-    resp = Datagrama.decode(ans)
-    assert resp.typ == MsgType.HELLO, "Esperaba HELLO ACK"
-    print("Recibido HELLO ACK")
-
-
 def send_request(request_maker, sender_socket, receiver_addr, filename):
-    request = request_maker(filename, 0, VER_SW)
+    request = request_maker(filename, VER_SW)
     sender_socket.sendto(request.encode(), receiver_addr)
-    ans, _ = sender_socket.recvfrom(4096)
+    ans, new_server_addr = sender_socket.recvfrom(4096)
     resp = Datagrama.decode(ans)
     assert resp.typ == MsgType.OK, "Esperaba OK tras REQUEST"
+    return new_server_addr
 
 
 def send_bye(sender_socket, receiver_addr, buf):
