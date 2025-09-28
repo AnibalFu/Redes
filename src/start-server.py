@@ -3,9 +3,10 @@ import sys
 from signal import SIGINT, signal
 from types import FrameType
 from argparse import ArgumentParser, Namespace, RawDescriptionHelpFormatter
-from lib.server import Server   
+from lib.server import DEFAULT_STORAGE_PATH, Server   
 from lib.protocolo_amcgf import *
 from lib.fileHandler import FileHandler
+
 
 def sigint_handler(_: int, frame: FrameType | None):
     server_socket = frame.f_locals['server_socket']
@@ -32,7 +33,7 @@ def process_args(args: Namespace):
     server.quiet = args.quiet
     server.host = args.host if args.host else server.host
     server.port = args.port if args.port else server.port    
-    server.fileHandler = FileHandler(args.storage) if args.storage else server.fileHandler
+    server.fileHandler = FileHandler(args.storage) if args.storage else FileHandler(DEFAULT_STORAGE_PATH)
 
     return server
 
