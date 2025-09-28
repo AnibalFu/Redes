@@ -35,7 +35,7 @@ VER_SW  = 1  # Stop-and-Wait
 VER_GBN = 2  # Go-Back-N
 
 # MTU de payload (recomendado por el TP)
-MSS = 1200
+MSS = 30
 MTU = HDR_SIZE + MSS
 
 # Flags de 16 bits
@@ -48,7 +48,7 @@ FLAG_MF  = 0x4000
 ACK_NONE = 0
 
 # Payload key
-PAYLOAD_DATA_KEY = "chunk"
+PAYLOAD_DATA_KEY = "chunk" # deprecado
 PAYLOAD_FILENAME_KEY = "filename"
 PAYLOAD_ERR_MSG_KEY = "message"
 
@@ -187,7 +187,7 @@ class Datagrama:
 
         # Preview de payload (primeros 20 bytes)
         if plen > 0:
-            preview = self.payload[:20]
+            preview = self.payload
             if isinstance(preview, bytes):
                 try:
                     preview_str = preview.decode("utf-8", "ignore")
@@ -225,7 +225,7 @@ def _encode_value(v) -> str:
         raise ValueError(f"Unsupported type for encoding: {type(v)}")
 
 def _decode_value(k: str, v: str):
-    if k == "chunk":
+    if k == PAYLOAD_DATA_KEY:
         return bytes.fromhex(v)
     elif v.lower() in ("true", "false"):
         return v.lower() == "true"
@@ -269,10 +269,10 @@ def make_ok(extra: dict | None = None, ver: int = VER_SW, ack: int = ACK_NONE) -
 def make_err(msg: str, ver: int = VER_SW, ack: int = ACK_NONE) -> Datagrama:
     return Datagrama(ver, MsgType.ERR, ack=ack, payload=payload_encode({PAYLOAD_ERR_MSG_KEY: msg}))
 
-# DATA con seq obligatorio y ACK piggyback opcional
+# DATA con SEQ obligatorio y ACK piggyback opcional
 def make_data(seq: int, chunk: bytes, ver: int, ack: int = ACK_NONE, mf: bool = False) -> Datagrama:
     flags = FLAG_MF if mf else 0
-    return Datagrama(ver, MsgType.DATA, ack=ack, seq=seq, payload=payload_encode({PAYLOAD_DATA_KEY: chunk}), flags=flags)
+    return Datagrama(ver, MsgType.DATA, ack=ack, seq=seq, payload=chunk, flags=flags)
 
 # ACK puro
 def make_ack(acknum: int, ver: int) -> Datagrama:

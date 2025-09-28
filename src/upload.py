@@ -1,7 +1,7 @@
 from socket import socket, AF_INET, SOCK_DGRAM
 from argparse import ArgumentParser, RawDescriptionHelpFormatter, Namespace
 
-from lib.datagram_sending import send_bye
+from lib.datagram_sending import finalizar_conexion
 from lib.protocolo_amcgf import *
 from lib.client import Client
 
@@ -31,56 +31,72 @@ def process_args(args: Namespace):
 
     return client
 
-def request_upload(filename: str, src_path: str, host: str, port: int, chunk_size=MSS):
-    SERVER = (host, port)
-    BUF = 16
-
+# Por ahora representa el protocolo SW con numero de secuencia cotinuo
+def request_upload(filename: str, src_path: str, host: str, port: int):
+    chunk_size = (MSS - 1) // 2 # // por que el payload es bytes crudos
+    
+    print(f"[DEBUG] Chunk size: {chunk_size}")
     ctrl = socket(AF_INET, SOCK_DGRAM)
-
-    # 1. REQUEST_UPLOAD directo
+    
+    # Set timeout para recibir respuesta en 1 segundos
+    ctrl.settimeout(1)
+   
+    
+    # REQUEST_UPLOAD = handshake con el servidor
     request = make_req_upload(filename, VER_SW)
-    ctrl.sendto(request.encode(), SERVER)
+    print(f"[DEBUG] Enviado REQUEST_UPLOAD para {request}")
+    ctrl.sendto(request.encode(), (host, port))
 
-    # 2. Espera OK desde el nuevo puerto y guarda la dirección
-    data, new_server_addr = ctrl.recvfrom(BUF)
+    # Espera OK desde el nuevo puerto
+    data, connection_addr = ctrl.recvfrom(MTU)
+    
     datagrama = Datagrama.decode(data)
-    if datagrama.typ != MsgType.OK:
-        print("Error: no se recibió OK")
+    if datagrama.typ != MsgType.OK or datagrama.typ == MsgType.ERR:
+        print(f"[ERROR] Error: {datagrama.payload.decode()[PAYLOAD_ERR_MSG_KEY]}")
         ctrl.close()
         return
 
-    print(f"Recibido OK para UPLOAD, nueva dirección: {new_server_addr}")
+    print(f"[DEBUG] Recibido OK para UPLOAD, nueva dirección: {connection_addr}")
 
-    # 3. Transferencia de datos por la nueva dirección, leyendo por partes
-    # transfer_sock = socket(AF_INET, SOCK_DGRAM)
+    # Transferencia de datos por la nueva dirección, leyendo por partes
     seq = 0
-    with open(src_path) as f:
+    with open(src_path, 'rb') as f:
         while True:
             chunk = f.read(chunk_size)
             if not chunk:
                 break
-            mf = f.peek(1) != b'' if hasattr(f, 'peek') else True  # MF si hay más datos
+            mf = f.peek(1) != b''  # MF si hay más datos
+            
             datagrama = make_data(seq=seq, chunk=chunk, ver=VER_SW, mf=mf)
+            print(f"[DEBUG] {datagrama}")
             encoded = datagrama.encode()
+            
+            # Espero recibir ACK que espero seq+1
             ack_ok = False
             while not ack_ok:
-                ctrl.sendto(encoded, new_server_addr)
-                print(f"Enviado DATA con seq {seq}, MF={mf}")
+                ctrl.sendto(encoded, connection_addr)
+                print(f"[DEBUG] Enviado DATA con seq {seq}, MF={mf}")
+                
                 try:
-                    data, _ = ctrl.recvfrom(BUF)
+                    data, _connection_addr = ctrl.recvfrom(MTU)
                     datagram = Datagrama.decode(data)
+                    
                     if datagram.typ == MsgType.ACK and datagram.ack == seq + 1:
-                        print(f"ACK correcto recibido: {datagram}")
+                        print(f"[DEBUG] ACK correcto recibido: {datagram}")
                         ack_ok = True
+                        
                     else:
-                        print(f"ACK incorrecto (esperaba {seq+1}), reenviando DATA seq {seq}")
+                        print(f"[DEBUG] ACK incorrecto (esperaba {seq+1}), reenviando DATA seq {seq}")
+                        
                 except TimeoutError:
-                    print(f"Timeout esperando ACK para seq {seq}, reenviando DATA")
+                    print(f"[DEBUG] Timeout esperando ACK para seq {seq}, reenviando DATA")
+
+                print(f"-------------------------" * 3)
+            # Incremento seq
             seq += 1
 
     # FIN
-    send_bye(ctrl, new_server_addr, BUF)
-    ctrl.close()
+    finalizar_conexion(ctrl, connection_addr)
 
 
 def upload(client: Client):
