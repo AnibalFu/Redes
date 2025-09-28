@@ -58,7 +58,7 @@ def handle_upload(sock: socket, client_addr: tuple[str, int], fileHandler: FileH
             continue
         
         if datagrama.typ == MsgType.DATA:
-            fileHandler.save_datagram(filename, datagrama, MSS-16)
+            fileHandler.save_datagram(filename, datagrama, MSS-HDR_SIZE)
             ack = make_ack(acknum=datagrama.seq + 1, ver=VER_SW)
             sock.sendto(ack.encode(), client_addr)
             
