@@ -49,8 +49,8 @@ ACK_NONE = 0
 
 # Payload key
 PAYLOAD_DATA_KEY = "chunk" # deprecado
-PAYLOAD_FILENAME_KEY = "filename"
-PAYLOAD_ERR_MSG_KEY = "message"
+PAYLOAD_FILENAME_KEY = "filename" # deprecado
+PAYLOAD_ERR_MSG_KEY = "message" # deprecado
 
 
 class MsgType(IntEnum):
@@ -253,6 +253,9 @@ def payload_decode(b: bytes) -> dict:
         k, v = line.split("=", 1)
         out[k.strip()] = _decode_value(k.strip(), v.strip())
     return out
+
+
+
 
 # -------------------- API --------------------
 

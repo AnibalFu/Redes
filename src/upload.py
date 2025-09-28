@@ -31,76 +31,6 @@ def process_args(args: Namespace):
 
     return client
 
-# Por ahora representa el protocolo SW con numero de secuencia cotinuo
-def request_upload(filename: str, src_path: str, host: str, port: int):
-    chunk_size = (MSS - 1) // 2 # // por que el payload es bytes crudos
-    
-    print(f"[DEBUG] Chunk size: {chunk_size}")
-    ctrl = socket(AF_INET, SOCK_DGRAM)
-    
-    # Set timeout para recibir respuesta en 1 segundos
-    ctrl.settimeout(1)
-   
-    
-    # REQUEST_UPLOAD = handshake con el servidor
-    request = make_req_upload(filename, VER_SW)
-    print(f"[DEBUG] Enviado REQUEST_UPLOAD para {request}")
-    ctrl.sendto(request.encode(), (host, port))
-
-    # Espera OK desde el nuevo puerto
-    data, connection_addr = ctrl.recvfrom(MTU)
-    
-    datagrama = Datagrama.decode(data)
-    if datagrama.typ != MsgType.OK or datagrama.typ == MsgType.ERR:
-        print(f"[ERROR] Error: {datagrama.payload.decode()[PAYLOAD_ERR_MSG_KEY]}")
-        ctrl.close()
-        return
-
-    print(f"[DEBUG] Recibido OK para UPLOAD, nueva dirección: {connection_addr}")
-
-    # Transferencia de datos por la nueva dirección, leyendo por partes
-    seq = 0
-    with open(src_path, 'rb') as f:
-        while True:
-            chunk = f.read(chunk_size)
-            if not chunk:
-                break
-            mf = f.peek(1) != b''  # MF si hay más datos
-            
-            datagrama = make_data(seq=seq, chunk=chunk, ver=VER_SW, mf=mf)
-            print(f"[DEBUG] {datagrama}")
-            encoded = datagrama.encode()
-            
-            # Espero recibir ACK que espero seq+1
-            ack_ok = False
-            while not ack_ok:
-                ctrl.sendto(encoded, connection_addr)
-                print(f"[DEBUG] Enviado DATA con seq {seq}, MF={mf}")
-                
-                try:
-                    data, _connection_addr = ctrl.recvfrom(MTU)
-                    datagram = Datagrama.decode(data)
-                    
-                    if datagram.typ == MsgType.ACK and datagram.ack == seq + 1:
-                        print(f"[DEBUG] ACK correcto recibido: {datagram}")
-                        ack_ok = True
-                        
-                    else:
-                        print(f"[DEBUG] ACK incorrecto (esperaba {seq+1}), reenviando DATA seq {seq}")
-                        
-                except TimeoutError:
-                    print(f"[DEBUG] Timeout esperando ACK para seq {seq}, reenviando DATA")
-
-                print(f"-------------------------" * 3)
-            # Incremento seq
-            seq += 1
-
-    # FIN
-    finalizar_conexion(ctrl, connection_addr)
-
-
-def upload(client: Client):
-    request_upload(client.name, client.src, client.host, client.port)
 
 if __name__ == '__main__':
 
@@ -108,4 +38,4 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     client = process_args(args)
-    upload(client=client)
+    client.upload()

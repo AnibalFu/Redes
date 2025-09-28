@@ -23,17 +23,16 @@ class FileHandler:
         self.open_files[filename] = f
         return f
     
-    def save_datagram(self, filename: str, datagram: Datagrama, chunk_size: int):
+    def save_datagram(self, filename: str, datagram: Datagrama):
         if filename not in self.open_files:
-            mode = "r+b" if self.is_filename_used(filename) else "wb"
-            self.open_file(filename, mode)
+            # Abrir siempre en 'wb' para truncar el archivo si ya existe (pisar contenido)
+            self.open_file(filename, "wb")
 
         f = self.open_files[filename]
-        offset = datagram.seq * chunk_size
-        f.seek(offset)
         f.write(datagram.payload)
 
         if not (datagram.flags & FLAG_MF): 
+            print(f"[DEBUG] Archivo '{filename}' guardado completo")
             self.close_file(filename)
     
     def close_file(self, filename: str):
