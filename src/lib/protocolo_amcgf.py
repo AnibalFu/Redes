@@ -1,4 +1,23 @@
 # amcgf_proto.py
+
+"""
+File Transfer / Go-Back-N / Stop-and-Wait (AMCGF) Header
+
+    0               1             2               3
+    0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7 
+   +---------------+---------------+-------------------------------+
+   |     Type      |    Version    |             Flags             |
+   +---------------+---------------+-------------------------------+
+   |            Length             |           Checksum            |
+   +---------------------------------------------------------------+
+   |                        AckNum (32 bits)                       |
+   +---------------------------------------------------------------+
+   |                        SeqNum (32 bits)                       |
+   +---------------------------------------------------------------+
+   |                            Payload                            |
+   +---------------------------------------------------------------+
+"""
+
 from dataclasses import dataclass
 from enum import IntEnum
 import struct
@@ -16,7 +35,7 @@ VER_SW  = 1  # Stop-and-Wait
 VER_GBN = 2  # Go-Back-N
 
 # MTU de payload (recomendado por el TP)
-MSS = 1200
+MSS = 1024
 MAX_FRAME = HDR_SIZE + MSS
 
 # Flags de 16 bits
@@ -28,15 +47,20 @@ FLAG_MF  = 0x4000
 # Convencion: ack == 0 => no hay ACK piggyback
 ACK_NONE = 0
 
+# Payload key
+PAYLOAD_DATA_KEY = "chunk" # deprecado
+PAYLOAD_FILENAME_KEY = "filename"
+PAYLOAD_ERR_MSG_KEY = "message"
+
+
 class MsgType(IntEnum):
-    HELLO            = 0
-    REQUEST_UPLOAD   = 1
-    REQUEST_DOWNLOAD = 2
-    OK               = 3
-    ERR              = 4
-    DATA             = 5 # A sacar
-    ACK              = 6
-    BYE              = 7 # A sacar
+    REQUEST_UPLOAD   = 0
+    REQUEST_DOWNLOAD = 1
+    OK               = 2
+    ERR              = 3
+    DATA             = 4 
+    ACK              = 5
+    BYE              = 6 
 
 # Errores
 class ProtoError(Exception): ...
@@ -92,7 +116,7 @@ class Datagrama:
             self.ack,               # ACKNUM
             self.seq,               # SEQNUM
         )
-
+        
         ck = inet_checksum(header_wo_ck + self.payload)
 
         # Header final con checksum real
@@ -163,7 +187,7 @@ class Datagrama:
 
         # Preview de payload (primeros 20 bytes)
         if plen > 0:
-            preview = self.payload[:20]
+            preview = self.payload
             if isinstance(preview, bytes):
                 try:
                     preview_str = preview.decode("utf-8", "ignore")
@@ -201,7 +225,7 @@ def _encode_value(v) -> str:
         raise ValueError(f"Unsupported type for encoding: {type(v)}")
 
 def _decode_value(k: str, v: str):
-    if k == "data":
+    if k == PAYLOAD_DATA_KEY:
         return bytes.fromhex(v)
     elif v.lower() in ("true", "false"):
         return v.lower() == "true"
@@ -232,32 +256,20 @@ def payload_decode(b: bytes) -> dict:
 
 # -------------------- API --------------------
 
-# HELLO: negociar en el payload (ej: mss, win, rto_ms)
-def make_hello(proto: str = "SW", mss: int = MSS, win: int | None = None, rto_ms: int | None = None) -> Datagrama:
-    ver = VER_SW if proto.upper() == "SW" else VER_GBN
-    d = {"mss": mss}
-    if win is not None:
-        d["win"] = win
-    if rto_ms is not None:
-        d["rto_ms"] = rto_ms
-    return Datagrama(ver, MsgType.HELLO, payload=payload_encode(d))
+def make_req_upload(filename: str, ver: int) -> Datagrama:
+    return Datagrama(ver, MsgType.REQUEST_UPLOAD, payload=payload_encode({PAYLOAD_FILENAME_KEY: filename}))
 
-def make_req_upload(name: str, data: int, ver: int, mf: bool = False) -> Datagrama:
-    flags = FLAG_MF if mf else 0
-    return Datagrama(ver, MsgType.REQUEST_UPLOAD, payload=payload_encode({"name": name, "data": data}), flags=flags)
-
-def make_req_download(name: str, ver: int, mf: bool = False) -> Datagrama:
-    flags = FLAG_MF if mf else 0
-    return Datagrama(ver, MsgType.REQUEST_DOWNLOAD, payload=payload_encode({"name": name}), flags=flags)
+def make_req_download(filename: str, ver: int) -> Datagrama:
+    return Datagrama(ver, MsgType.REQUEST_DOWNLOAD, payload=payload_encode({PAYLOAD_FILENAME_KEY: filename}))
 
 # OK / ERR con piggyback opcional de ACK (ack != 0 => ACK valido y se encendera FLAG_ACK)
 def make_ok(extra: dict | None = None, ver: int = VER_SW, ack: int = ACK_NONE) -> Datagrama:
     return Datagrama(ver, MsgType.OK, ack=ack, payload=payload_encode(extra or {}))
 
-def make_err(code: str, msg: str, ver: int = VER_SW, ack: int = ACK_NONE) -> Datagrama:
-    return Datagrama(ver, MsgType.ERR, ack=ack, payload=payload_encode({"code": code, "message": msg}))
+def make_err(msg: str, ver: int = VER_SW, ack: int = ACK_NONE) -> Datagrama:
+    return Datagrama(ver, MsgType.ERR, ack=ack, payload=payload_encode({PAYLOAD_ERR_MSG_KEY: msg}))
 
-# DATA con seq obligatorio y ACK piggyback opcional
+# DATA con SEQ obligatorio y ACK piggyback opcional
 def make_data(seq: int, chunk: bytes, ver: int, ack: int = ACK_NONE, mf: bool = False) -> Datagrama:
     flags = FLAG_MF if mf else 0
     return Datagrama(ver, MsgType.DATA, ack=ack, seq=seq, payload=chunk, flags=flags)

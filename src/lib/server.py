@@ -1,7 +1,7 @@
 from attr import dataclass
-from lib.storage import Storage
+from lib.fileHandler import FileHandler
 from lib.connection import Connection
 
 @dataclass
 class Server(Connection):
-    storage: Storage = Storage('/data/storage.bin')
+    fileHandler: FileHandler = FileHandler('../storage_data')

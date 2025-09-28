@@ -1,11 +1,10 @@
-
 from socket import socket, AF_INET, SOCK_DGRAM
 from argparse import ArgumentParser, Namespace, RawDescriptionHelpFormatter
 
 from lib.client import Client
-from lib.datagram_sending import send_bye, send_hello, send_request
-from lib.flags import USER_FLAGS
-from lib.protocolo_amcgf import FLAG_MF, VER_SW, Datagrama, MsgType, make_ack, make_bye, make_hello, make_req_download
+from lib.fileHandler import FileHandler
+from lib.datagram_sending import finalizar_conexion, send_request
+from lib.protocolo_amcgf import FLAG_MF, VER_SW, Datagrama, MsgType, make_ack, make_req_download, MTU, MSS
 
 def define_flags():
     parser = ArgumentParser(description='Download file program', formatter_class=RawDescriptionHelpFormatter)
@@ -34,62 +33,71 @@ def process_args(args: Namespace):
     return client
 
 def download(client: Client):
-    request_download(client.name, client.host, client.port)
+    # -d es el directorio destino local; -n es el nombre del archivo remoto.
+    # Guardaremos el archivo con el mismo nombre en el directorio destino.
+    dest_dir = client.src
+    dest_filename = client.name
+    fileHandler = FileHandler(dest_dir)
+    request_download(dest_filename, client.host, client.port, fileHandler)
 
-def request_download(filename: str, host: str, port: int):
-    print(f"Solicitando descarga de '{filename}' desde {host}:{port}")
-
-    SERVER = (host, port)
-    BUF = 4096
+def request_download(filename: str, host: str, port: int, fileHandler: FileHandler):
+    print(f"[DEBUG] Solicitando descarga de '{filename}' desde {host}:{port}")
 
     ctrl = socket(AF_INET, SOCK_DGRAM)
 
-    # 1. HELLO
-    send_hello(ctrl, SERVER, BUF)
-
-    # 2. DOWNLOAD
-    send_request(make_req_download, ctrl, SERVER, filename)
-    print("Recibido OK para DOWNLOAD")
-
-    # 3. Empieza a llegar la transferencia de datos
-    # (podemos negociar el puerto aca si queremos)
-    receive_content(ctrl, SERVER)
+    # Server me responde por el nuevo socket
+    download_conection = send_request(make_req_download, ctrl, (host, port), filename)
+    print("[DEBUG] Recibido OK para DOWNLOAD")
+    print(f"[DEBUG] Socket: {ctrl}")
+    print(f"[DEBUG] Nueva dirección: {download_conection}")
+    
+    receive_content(ctrl, download_conection, fileHandler, filename)
 
     # FIN
-    send_bye(ctrl, SERVER, BUF)
+    finalizar_conexion(ctrl, download_conection)
     ctrl.close()
 
-def receive_content(ctrl, SERVER):
+def receive_content(ctrl, download_conection, fileHandler: FileHandler, filename: str):
     expected_seq = 0
     while True:
-        print("Por recibir...")
-        data, _ = ctrl.recvfrom(4096)
-        # sender = (SERVER[0], sender_address[1]), cuando tengamos la concurrencia
+        print("[DEBUG] Por recibir...")
+        data, _download_conection = ctrl.recvfrom(MTU)
+        
         try:
             datagrama = Datagrama.decode(data)
+            
         except Exception as e:
-            print(f"Error al decodificar datagrama: {e}")
+            print(f"[DEBUG] Error al decodificar datagrama: {e}")
             continue
 
         if datagrama.typ == MsgType.DATA:
-            if expected_seq == 0:
-                expected_seq = datagrama.seq
-            data = datagrama.payload
-            print(f"Recibido {data}")
-            print(f"Recibido DATA con seq {datagrama.seq}")
+            if datagrama.seq != expected_seq:
+                # Fuera de orden para SW no debería ocurrir; re-ACK del último válido
+                ack = make_ack(acknum=expected_seq, ver=VER_SW)
+                ctrl.sendto(ack.encode(), download_conection)
+                print(f"[DEBUG] Fuera de orden: esperado {expected_seq}, recibido {datagrama.seq}. Reenviado ACK {expected_seq}")
+                continue
+
+            data_chunk = datagrama.payload
+            print(f"[DEBUG] Recibido {len(data_chunk)} bytes")
+            print(f"[DEBUG] Recibido DATA con seq {datagrama.seq}")
+            
+            # Guardar chunk en la posición correcta (offset = seq * MSS)
+            fileHandler.save_datagram(filename, datagrama, MSS)
+            
             # Enviar ACK
-            ack = make_ack(acknum=expected_seq + 1, ver=VER_SW)
-            ctrl.sendto(ack.encode(), SERVER)
-            print(f"Enviado ACK {expected_seq + 1}")
+            expected_seq += 1
+            ack = make_ack(acknum=expected_seq, ver=VER_SW)
+            ctrl.sendto(ack.encode(), download_conection)
+            print(f"[DEBUG] Enviado ACK {expected_seq}")
             if not (datagrama.flags & FLAG_MF):
                 print("Archivo recibido completo")
                 break
-            if datagrama.seq == expected_seq:
-                expected_seq += 1
-
         else:
-            print(f"Mensaje inesperado: {datagrama.pretty_print()}")
+            print(f"[DEBUG] Mensaje inesperado: {datagrama}")
             continue
+    
+    print(f"[DEBUG] Descarga de '{filename}' finalizada")
 
 
 if __name__ == "__main__":
