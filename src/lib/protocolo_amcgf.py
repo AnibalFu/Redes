@@ -220,13 +220,13 @@ def _encode_value(v) -> str:
     elif isinstance(v, (int, float, str)):
         return str(v)
     elif isinstance(v, bytes):
-        return v.hex()
+        return v
     else:
         raise ValueError(f"Unsupported type for encoding: {type(v)}")
 
 def _decode_value(k: str, v: str):
     if k == PAYLOAD_DATA_KEY:
-        return bytes.fromhex(v)
+        return v
     elif v.lower() in ("true", "false"):
         return v.lower() == "true"
     try:
@@ -238,24 +238,41 @@ def _decode_value(k: str, v: str):
             return v
 
 def payload_encode(d: dict) -> bytes:
+    # Caso especial: payload binario puro bajo la clave de datos.
+    # Formato: b"<KEY>=" + <bytes>
+    if (
+        len(d) == 1
+        and PAYLOAD_DATA_KEY in d
+        and isinstance(d[PAYLOAD_DATA_KEY], (bytes, bytearray, memoryview))
+    ):
+        v = bytes(d[PAYLOAD_DATA_KEY])
+        return PAYLOAD_DATA_KEY.encode("utf-8") + b"=" + v
+
+    # Caso general (texto): k=v por linea, UTF-8
     items = []
     for k, v in d.items():
         items.append(f"{k}={_encode_value(v)}")
     return "\n".join(items).encode("utf-8")
 
+
 def payload_decode(b: bytes) -> dict:
     out = {}
     if not b:
         return out
+
+    # Caso especial binario: "<KEY>=" + bytes crudos
+    prefix = (PAYLOAD_DATA_KEY + "=").encode("utf-8")
+    if b.startswith(prefix):
+        out[PAYLOAD_DATA_KEY] = b[len(prefix):]
+        return out
+
+    # Caso general (texto): k=v por linea, UTF-8
     for line in b.decode("utf-8", "strict").splitlines():
         if not line or "=" not in line:
             continue
         k, v = line.split("=", 1)
         out[k.strip()] = _decode_value(k.strip(), v.strip())
     return out
-
-
-
 
 # -------------------- API --------------------
 
