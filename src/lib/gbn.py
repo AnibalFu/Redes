@@ -1,16 +1,14 @@
-
 from dataclasses import dataclass
 from socket import socket
+
 from src.lib.protocolo_amcgf import Datagrama
 
 @dataclass  
 class GoBackN:
-    
     def __init__(self, sock: socket, client_addr: tuple[str, int]):
         self.sock = sock
         self.client_addr = client_addr
-        
-        
+            
     def send_data(self, datagrama: Datagrama):
         pass
         

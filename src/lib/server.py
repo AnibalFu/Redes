@@ -1,12 +1,12 @@
-from attr import dataclass
-from socket import socket, AF_INET, SOCK_DGRAM
+import threading
+
+from dataclasses import dataclass
+from socket import socket
+from typing import Tuple
+
 from lib.fileHandler import FileHandler
 from lib.connection import Connection
 from lib.datagram_sending import *
-from lib.sw import StopAndWait
-import threading
-import time
-from typing import Tuple
         
 # A futuro restar key de data
 CHUNK_SIZE = MSS
@@ -33,7 +33,7 @@ class Server(Connection):
                 continue
 
             try:
-                datagrama = Datagrama.decode(packet)
+                datagram = Datagrama.decode(packet)
             except Exception as e:
                 err = make_err("Error al decodificar datagrama")
                 server_socket.sendto(err.encode(), client_addr)
@@ -41,65 +41,66 @@ class Server(Connection):
                 continue
         
             # Tipos de mensajes aceptados de cliente
-            if datagrama.typ == MsgType.REQUEST_UPLOAD:
-                payload = payload_decode(datagrama.payload)
+            if datagram.typ == MsgType.REQUEST_UPLOAD:
+                payload = payload_decode(datagram.payload)
                 print(f"[DEBUG] REQUEST_UPLOAD de {client_addr} payload: {payload}")
+                
                 filename = payload[PAYLOAD_FILENAME_KEY]
-                sock = self._make_udp_socket(bind_addr=('', 0))  # Puerto libre asignado por el SO
-                threading.Thread(target=self.handle_upload, args=(sock, client_addr, filename), daemon=True).start()
+                
+                udp_socket = self._make_udp_socket(bind_addr=('', 0))
+                
+                threading.Thread(target=self.handle_upload, args=(udp_socket, client_addr, filename), daemon=True).start()
 
-
-            elif datagrama.typ == MsgType.REQUEST_DOWNLOAD:
-                payload = payload_decode(datagrama.payload)
+            elif datagram.typ == MsgType.REQUEST_DOWNLOAD:
+                payload = payload_decode(datagram.payload)
                 print(f"[DEBUG] REQUEST_DOWNLOAD de {client_addr} payload: {payload}")
+                
                 filename = payload[PAYLOAD_FILENAME_KEY]
                 print(f"[DEBUG] Filename: {filename}")
-                sock = self._make_udp_socket(bind_addr=('', 0))  # Puerto libre asignado por el SO
-                threading.Thread(target=self.handle_download, args=(sock, client_addr, filename), daemon=True).start()
-
-    # server_socket.close()
+                
+                udp_socket = self._make_udp_socket(bind_addr=('', 0))
+                
+                threading.Thread(target=self.handle_download, args=(udp_socket, client_addr, filename), daemon=True).start()
     
-    def handle_upload(self, sock: socket, client_addr: Tuple[str, int], filename: str):
+    def handle_upload(self, udp_socket: socket, client_addr: Tuple[str, int], filename: str):
         # Parte del handshake
-        sw = self._send_ok_and_prepare_sw(sock, client_addr, rto=1.0)
-        print(f"[DEBUG] Handle upload en puerto {sock.getsockname()[1]} para {client_addr}")
+        sw = self._send_ok_and_prepare_sw(udp_socket=udp_socket, peer_addr=client_addr, rto=1.0)
+        print(f"[DEBUG] Handle upload en puerto {udp_socket.getsockname()[1]} para {client_addr}")
 
-        seq = 0
+        seq_number = 0
         while True:
-            d = sw.receive_data()
+            datagram = sw.receive_data()
             
-            if d is None:
+            if not datagram:
                 continue
             
-            if d.typ == MsgType.DATA:
-                print(f"[DEBUG] Recibido DATA con seq {d.seq} esperado {seq}")
-                if d.seq == seq:
-                    self.fileHandler.save_datagram(filename, d)
-                    seq += 1
-                sw.send_ack(seq)
+            if datagram.typ == MsgType.DATA:
+                print(f"[DEBUG] Recibido DATA con seq {datagram.seq} esperado {seq_number}")
+                if datagram.seq == seq_number:
+                    self.fileHandler.save_datagram(filename=filename, datagram=datagram)
+                    seq_number += 1
                 
-                if not (d.flags & FLAG_MF):
+                sw.send_ack(acknum=seq_number)
+                
+                if not (datagram.flags & FLAG_MF):
                     break
     
-                    
         sw.await_bye_and_linger(linger_factor=3, quiet_time=0.2)
 
         print("[DEBUG] Transferencia finalizada correctamente")
         print("[DEBUG] --------------------------------------")
-        sock.close()
+        udp_socket.close()
         
-        
-    def handle_download(self, sock: socket, client_addr: tuple[str, int], filename: str):
+    def handle_download(self, udp_socket: socket, client_addr: tuple[str, int], filename: str):
         # Parte del handshake
-        sw = self._send_ok_and_prepare_sw(sock, client_addr, rto=1.0)
+        sw = self._send_ok_and_prepare_sw(udp_socket, client_addr, rto=1.0)
         
         # Mando DATA
-        for seq, (payload, mf) in enumerate(self.fileHandler.get_file_chunks(filename, CHUNK_SIZE)):
-            d = make_data(seq=seq, chunk=payload, ver=VER_SW, mf=mf)
-            print(f"[DEBUG] Enviando DATA con seq {seq}")
-            sw.send_data(d)
+        for seq_number, (payload, mf) in enumerate(self.fileHandler.get_file_chunks(filename, CHUNK_SIZE)):
+            print(f"[DEBUG] Enviando DATA con seq {seq_number}")
+            sw.send_data(datagrama=make_data(seq=seq_number, chunk=payload, ver=VER_SW, mf=mf))
 
         # Mando BYE
         sw.send_bye_with_retry(max_retries=8, quiet_time=0.2)
 
-        sock.close()
+        udp_socket.close()

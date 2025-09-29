@@ -1,70 +1,87 @@
 from dataclasses import dataclass
+
 from lib.connection import Connection
-from lib.datagram_sending import *
-from socket import socket, AF_INET, SOCK_DGRAM
-from lib.sw import StopAndWait
+from lib.fileHandler import FileHandler
+from lib.protocolo_amcgf import FLAG_MF, MSS, VER_SW, MsgType, make_data, make_req_download, make_req_upload
 
 DEFAULT_NAME = "file.txt"
-DEFAULT_SRC = "/personal_folder"
-
+DEFAULT_SRC = "./storage_personal"
 
 @dataclass
 class Client(Connection):
     src: str = None
     name: str = None
+    fileHandler: FileHandler = None
 
     def upload(self):
-        req = make_req_upload(self.name, VER_SW)
-        sw, _connection_addr, ctrl = self._send_control_and_prepare_sw(req.encode(), timeout=1.0, rto=1.0)
-        if sw is None:
+        req = make_req_upload(self.name, self.protocol)
+
+        try:
+            encoded = req.encode()
+        except Exception:
             return
 
-        seq = 0
+        sw, _, client_socket = self._send_control_and_prepare_sw(req_bytes=encoded, timeout=1.0, rto=1.0)
+        
+        if not sw:
+            return
+
+        seq_number = 0
         # Envio de datos
-        with open(self.src, "rb") as f:
+        with open(self.src, 'rb') as file:
             while True:
-                chunk = f.read(MSS)
+                chunk = file.read(MSS)
                 if not chunk:
                     break
-                mf = f.peek(1) != b""
-                d = make_data(seq=seq, chunk=chunk, ver=VER_SW, mf=mf)
-                sw.send_data(d)
-                seq += 1
+
+                more_fragments = file.peek(1) != b''
+                
+                datagram = make_data(seq=seq_number, chunk=chunk, ver=self.protocol, mf=more_fragments)
+                sw.send_data(datagram)
+
+                seq_number += 1
 
         # FIN 
         ok = sw.send_bye_with_retry(max_retries=8, quiet_time=0.2)
         
         print("[DEBUG] Archivo enviado completo espero BYE")
-        ctrl.close()
-
+        client_socket.close()
 
     def download(self):
         print(f"[DEBUG] Solicitando descarga de '{self.name}' desde {self.host}:{self.port}")
 
         req = make_req_download(self.name, VER_SW)
-        sw, _connection_addr, ctrl = self._send_control_and_prepare_sw(req.encode(), timeout=1.0, rto=1.0)
-        if sw is None:
+
+        try:
+            encoded = req.encode()
+        except Exception:
             return
 
-        seq = 0
+        sw, _, client_socket = self._send_control_and_prepare_sw(req_bytes=encoded, timeout=1.0, rto=1.0)
+        
+        if not sw:
+            return
+
+        seq_number = 0
         while True:
-            d = sw.receive_data()
+            datagram = sw.receive_data()
             
-            if d is None:
+            if not datagram:
                 continue
             
-            if d.typ == MsgType.DATA and d.seq < seq:
-                sw.send_ack(d.seq + 1)
+            if datagram.typ == MsgType.DATA and datagram.seq < seq_number:
+                sw.send_ack(datagram.seq + 1)
                 continue
             
-            if d.typ == MsgType.DATA and d.seq == seq:
-                self.fileHandler.save_datagram(self.name, d)
-                seq += 1
-                sw.send_ack(seq)
+            if datagram.typ == MsgType.DATA and datagram.seq == seq_number:
+                self.fileHandler.save_datagram(self.name, datagram)
                 
-                if not (d.flags & FLAG_MF):
+                seq_number += 1
+                sw.send_ack(seq_number)
+                
+                if not (datagram.flags & FLAG_MF):
                     break
                 
         sw.await_bye_and_linger(linger_factor=1, quiet_time=0.2)        
         print("[DEBUG] Descarga finalizada correctamente")
-        ctrl.close()
+        client_socket.close()

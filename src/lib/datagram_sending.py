@@ -1,21 +1,41 @@
-from lib.protocolo_amcgf import *
+from typing import Callable
 from socket import socket
 
+from lib.client import Client
+from lib.protocolo_amcgf import *
 
-def send_request(request_maker, sender_socket, receiver_addr, filename):
-    request = request_maker(filename, VER_SW)
-    sender_socket.sendto(request.encode(), receiver_addr)
-    ans, new_server_addr = sender_socket.recvfrom(MTU)
-    resp = Datagrama.decode(ans)
-    assert resp.typ == MsgType.OK, "Esperaba OK tras REQUEST"
-    return new_server_addr
+def send_request(request: Callable, udp_socket: socket, addr: tuple[str, int], client: Client):
+    try:
+        encoded = request(client.name, client.protocol)
+    except Exception:
+        raise
 
+    udp_socket.sendto(encoded, addr)
 
-def finalizar_conexion(sender_socket: socket, receiver_addr: socket):
+    _bytes, new_addr = udp_socket.recvfrom(MTU)
+
+    # try:
+    #     datagram = Datagrama.decode(buf=bytes)
+    # except Exception:
+    #     raise
+    
+    return new_addr
+
+def send_bye(udp_socket: socket, addr: tuple[str, int]):
     bye = make_bye(VER_SW)
-    sender_socket.sendto(bye.encode(), receiver_addr)
-    ans, _ = sender_socket.recvfrom(MTU)
-    resp = Datagrama.decode(ans)
-    assert resp.typ == MsgType.OK, "Esperaba OK tras BYE" # TODO: quitar assert
-    print("Transferencia finalizada correctamente")
-    sender_socket.close()
+
+    try:
+        encoded = bye.encode()
+    except Exception:
+        raise
+
+    udp_socket.sendto(encoded, addr)
+
+    bytes, _ = udp_socket.recvfrom(MTU)
+
+    try:
+        datagram = Datagrama.decode(buf=bytes)
+    except Exception:
+        raise
+
+    udp_socket.close()
