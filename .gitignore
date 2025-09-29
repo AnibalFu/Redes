@@ -1,8 +1,9 @@
+# Python folders
 .pytest_cache/
 __pycache__/
 
-/storage_data/
-/bdd/
-/carpeta_personal/
-/personal_folder/
-/data/
+# Program folders
+storage_*/
+
+# Test folders
+tests/data/
