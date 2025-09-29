@@ -1,6 +1,5 @@
 from argparse import ArgumentParser, RawDescriptionHelpFormatter, Namespace
 
-from lib.fileHandler import FileHandler
 from lib.protocolo_amcgf import *
 from lib.client import DEFAULT_NAME, DEFAULT_SRC, Client
 
@@ -26,10 +25,13 @@ def process_args(args: Namespace):
     client.port = args.port if args.port else client.port
     client.src = args.src if args.src else DEFAULT_SRC
     client.name = args.name if args.name else DEFAULT_NAME
-    client.protocol = args.protocol if args.protocol else client.protocol
+
+    if args.protocol == 'SW':
+        client.protocol = VER_SW
+    elif args.protocol == 'GBN':
+        client.protocol = VER_GBN
 
     return client
-
 
 if __name__ == '__main__':
 
