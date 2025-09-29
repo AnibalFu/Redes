@@ -1,6 +1,7 @@
 
 from dataclasses import dataclass
-
+from socket import socket
+from src.lib.protocolo_amcgf import Datagrama
 
 @dataclass  
 class GoBackN:

@@ -9,6 +9,7 @@ class KeyNotFoundError(FileHandlerError): ...
 class FileHandler:
     def __init__(self, data_path: str):
         self.data_path = data_path
+        print("Ruta donde se va a guardar FILEHANDLER:", self.data_path)
         self.open_files: dict[str, 'io.BufferedRandom'] = {}
         os.makedirs(self.data_path, exist_ok=True)
 
@@ -40,14 +41,24 @@ class FileHandler:
             self.open_files[filename].close()
             del self.open_files[filename]
 
-    def get_file(self, filename: str) -> bytes:
-        """Devuelve el contenido del archivo completo"""
+    def get_file_chunks(self, filename: str, chunk_size: int):
+        """Generador que devuelve el archivo en chunks de tamaño chunk_size"""
+        
         if not self.is_filename_used(filename):
             raise KeyNotFoundError(f"Archivo '{filename}' no encontrado")
-        
+
         filepath = os.path.join(self.data_path, filename)
+        filesize = os.path.getsize(filepath)
+        
         with open(filepath, 'rb') as f:
-            return f.read()
+            while True:
+                payload = f.read(chunk_size)
+                if not payload:
+                    break
+                mf = f.tell() < filesize
+                print(f"[DEBUG] Enviando payload: '{payload}' MF={mf} de tamaño {len(payload)}")
+                yield payload, mf
+
         
         
 

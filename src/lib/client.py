@@ -6,13 +6,15 @@ from socket import socket, AF_INET, SOCK_DGRAM
 
 
 CHUNK_SIZE = MSS 
+DEFAULT_NAME = "file.txt"
+DEFAULT_SRC = "/personal_folder"
+
 
 @dataclass
 class Client(Connection):
-    src: str = 'carpeta_personal/'
-    name: str = 'file.txt'
-    fileHandler: FileHandler = FileHandler(src)  # Hay un bug de que se setea ya cuando lo instancio
-    
+    src: str = None
+    name: str = None
+
     # Por ahora representa el protocolo SW con numero de secuencia cotinuo
     def upload(self):
         

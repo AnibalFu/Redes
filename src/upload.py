@@ -1,9 +1,8 @@
-from socket import socket, AF_INET, SOCK_DGRAM
 from argparse import ArgumentParser, RawDescriptionHelpFormatter, Namespace
 
-from lib.datagram_sending import finalizar_conexion
+from lib.fileHandler import FileHandler
 from lib.protocolo_amcgf import *
-from lib.client import Client
+from lib.client import DEFAULT_NAME, DEFAULT_SRC, Client
 
 def define_flags():
     parser = ArgumentParser(description='Upload file program', formatter_class=RawDescriptionHelpFormatter)
@@ -25,9 +24,9 @@ def process_args(args: Namespace):
     client.quiet = args.quiet
     client.host = args.host if args.host else client.host
     client.port = args.port if args.port else client.port
-    client.src = args.src if args.src else client.src
-    client.name = args.name if args.name else client.name
-    client.protocol = args.protocol if args.protocol else client.protocol    
+    client.src = args.src if args.src else DEFAULT_SRC
+    client.name = args.name if args.name else DEFAULT_NAME
+    client.protocol = args.protocol if args.protocol else client.protocol
 
     return client
 

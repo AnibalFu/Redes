@@ -9,10 +9,11 @@ import threading
         
 # A futuro restar key de data
 CHUNK_SIZE = MSS
+DEFAULT_STORAGE_PATH = './storage_data'
 
 @dataclass
 class Server(Connection):
-    fileHandler: FileHandler = FileHandler('../storage_data')
+    fileHandler: FileHandler = None
     # sw: StopAndWait = StopAndWait(socket(AF_INET, SOCK_DGRAM), ('', 0))
 
     def run(self):
@@ -46,7 +47,7 @@ class Server(Connection):
                 filename = payload[PAYLOAD_FILENAME_KEY]
                 sock = socket(AF_INET, SOCK_DGRAM)
                 sock.bind(('', 0))  # Puerto libre asignado por el SO
-                threading.Thread(target=self.handle_upload, args=(sock, sender_address, self.fileHandler, filename), daemon=True).start()
+                threading.Thread(target=self.handle_upload, args=(sock, sender_address, filename), daemon=True).start()
 
 
             elif datagrama.typ == MsgType.REQUEST_DOWNLOAD:
@@ -56,11 +57,11 @@ class Server(Connection):
                 print(f"[DEBUG] Filename: {filename}")
                 sock = socket(AF_INET, SOCK_DGRAM)
                 sock.bind(('', 0))  # Puerto libre asignado por el SO
-                threading.Thread(target=self.handle_download, args=(sock, sender_address, filename, self.fileHandler), daemon=True).start()
+                threading.Thread(target=self.handle_download, args=(sock, sender_address, filename), daemon=True).start()
 
     # server_socket.close()
     
-    def handle_upload(self, sock: socket, client_addr: tuple[str, int], fileHandler: FileHandler, filename: str):
+    def handle_upload(self, sock: socket, client_addr: tuple[str, int], filename: str):
         """Maneja la recepción de un archivo por UDP en un puerto efímero."""
         ok = make_ok(ver=VER_SW)
         sock.sendto(ok.encode(), client_addr)
@@ -81,7 +82,7 @@ class Server(Connection):
                 continue
             
             if datagrama.typ == MsgType.DATA:
-                fileHandler.save_datagram(filename, datagrama)
+                self.fileHandler.save_datagram(filename, datagrama)
                 ack = make_ack(acknum=datagrama.seq + 1, ver=VER_SW)
                 sock.sendto(ack.encode(), client_addr)
                 
@@ -97,19 +98,15 @@ class Server(Connection):
         
         sock.close()
 
-    def handle_download(self, sock: socket, client_addr: tuple[str, int], filename: str, fileHandler: FileHandler):
+    def handle_download(self, sock: socket, client_addr: tuple[str, int], filename: str):
         """Maneja el envío de un archivo por UDP en un puerto efímero."""
         ok = make_ok(ver=VER_SW)
         sock.sendto(ok.encode(), client_addr)  # Enviar OK desde el nuevo socket
         print(f"[DEBUG] Download handler en puerto {sock.getsockname()[1]} para {client_addr}")
         
-        content = fileHandler.get_file(filename)  
         sock.settimeout(0.1)
-        seq = 0
         
-        for i in range(0, len(content), CHUNK_SIZE):
-            payload = content[i:i + CHUNK_SIZE]
-            mf = (i + CHUNK_SIZE) < len(content)
+        for seq, (payload, mf) in enumerate(self.fileHandler.get_file_chunks(filename, CHUNK_SIZE)):
             datagrama = make_data(seq=seq, chunk=payload, ver=VER_SW, mf=mf)
             encoded = datagrama.encode()
             
@@ -132,9 +129,7 @@ class Server(Connection):
                 except TimeoutError:
                     print(f"[DEBUG] Timeout esperando ACK para seq {seq}, reenviando DATA")
             #####################################
-            
-            seq += 1
-        
+                    
         # Esperar BYE
         data, _ = sock.recvfrom(MTU)
         resp = Datagrama.decode(data)

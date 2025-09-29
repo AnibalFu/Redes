@@ -19,4 +19,3 @@ def finalizar_conexion(sender_socket: socket, receiver_addr: socket):
     assert resp.typ == MsgType.OK, "Esperaba OK tras BYE" # TODO: quitar assert
     print("Transferencia finalizada correctamente")
     sender_socket.close()
-
