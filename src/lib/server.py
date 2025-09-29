@@ -7,6 +7,7 @@ from lib.sw import StopAndWait
 import threading
 import time
 from typing import Tuple
+from lib.config import *
         
 # A futuro restar key de data
 CHUNK_SIZE = MSS
@@ -61,7 +62,7 @@ class Server(Connection):
     
     def handle_upload(self, sock: socket, client_addr: Tuple[str, int], filename: str):
         # Parte del handshake
-        sw = self._send_ok_and_prepare_sw(sock, client_addr, rto=1.0)
+        sw = self._send_ok_and_prepare_sw(sock, client_addr, rto=RTO)
         print(f"[DEBUG] Handle upload en puerto {sock.getsockname()[1]} para {client_addr}")
 
         seq = 0
@@ -91,7 +92,7 @@ class Server(Connection):
         
     def handle_download(self, sock: socket, client_addr: tuple[str, int], filename: str):
         # Parte del handshake
-        sw = self._send_ok_and_prepare_sw(sock, client_addr, rto=1.0)
+        sw = self._send_ok_and_prepare_sw(sock, client_addr, rto=RTO)
         
         # Mando DATA
         for seq, (payload, mf) in enumerate(self.fileHandler.get_file_chunks(filename, CHUNK_SIZE)):

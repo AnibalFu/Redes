@@ -3,12 +3,13 @@ from socket import socket, timeout as SocketTimeout
 from typing import Tuple, Optional
 from lib.protocolo_amcgf import *
 import time
+from lib.config import *
 
 @dataclass
 class StopAndWait:
     sock: socket # Mio
     peer: Tuple[str, int] # Suyo
-    rto: float = 1.0 # Retardo de timeout
+    rto: float = RTO # Retardo de timeout
     
     #########################
     def send_upload(self, filename: str) -> None:

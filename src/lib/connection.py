@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from socket import socket, AF_INET, SOCK_DGRAM
 from lib.sw import StopAndWait
 from lib.datagram_sending import *
+from lib.config import *
 
 @dataclass
 class Connection:
@@ -20,7 +21,7 @@ class Connection:
             sock.settimeout(timeout)
         return sock
 
-    def _send_control_and_prepare_sw(self, req_bytes: bytes, timeout: float = 1.0, rto: float = 1.0) -> tuple[StopAndWait | None, tuple[str, int] | None, socket | None]:
+    def _send_control_and_prepare_sw(self, req_bytes: bytes, timeout: float = TIMEOUT_MAX, rto: float = RTO) -> tuple[StopAndWait | None, tuple[str, int] | None, socket | None]:
         """
         Client-side helper.
         Sends a control request (already encoded), waits for response, handles ERR, and returns a configured StopAndWait instance,
@@ -38,7 +39,7 @@ class Connection:
         sw = StopAndWait(ctrl, connection_addr, rto=rto)
         return sw, connection_addr, ctrl
 
-    def _send_ok_and_prepare_sw(self, sock: socket, peer_addr: tuple[str, int], rto: float = 1.0) -> StopAndWait:
+    def _send_ok_and_prepare_sw(self, sock: socket, peer_addr: tuple[str, int], rto: float = RTO) -> StopAndWait:
         """
         Server-side helper. Sends OK to the peer and returns a configured StopAndWait instance.
         """

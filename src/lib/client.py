@@ -1,8 +1,7 @@
 from dataclasses import dataclass
 from lib.connection import Connection
 from lib.datagram_sending import *
-from socket import socket, AF_INET, SOCK_DGRAM
-from lib.sw import StopAndWait
+from lib.config import *
 
 DEFAULT_NAME = "file.txt"
 DEFAULT_SRC = "/personal_folder"
@@ -15,7 +14,7 @@ class Client(Connection):
 
     def upload(self):
         req = make_req_upload(self.name, VER_SW)
-        sw, _connection_addr, ctrl = self._send_control_and_prepare_sw(req.encode(), timeout=1.0, rto=1.0)
+        sw, _connection_addr, ctrl = self._send_control_and_prepare_sw(req.encode(), timeout=TIMEOUT_MAX + 0.1, rto=RTO)
         if sw is None:
             return
 
@@ -42,7 +41,7 @@ class Client(Connection):
         print(f"[DEBUG] Solicitando descarga de '{self.name}' desde {self.host}:{self.port}")
 
         req = make_req_download(self.name, VER_SW)
-        sw, _connection_addr, ctrl = self._send_control_and_prepare_sw(req.encode(), timeout=1.0, rto=1.0)
+        sw, _connection_addr, ctrl = self._send_control_and_prepare_sw(req.encode(), timeout=TIMEOUT_MAX + 0.1, rto=RTO)
         if sw is None:
             return
 
