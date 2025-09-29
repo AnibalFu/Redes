@@ -14,19 +14,10 @@ class Client(Connection):
     name: str = None
 
     def upload(self):
-        ctrl = socket(AF_INET, SOCK_DGRAM)
-        ctrl.settimeout(1)
-
         req = make_req_upload(self.name, VER_SW)
-        ctrl.sendto(req.encode(), (self.host, self.port))
-
-        data, connection_addr = ctrl.recvfrom(MTU)
-        ok = Datagrama.decode(data)
-        if ok.typ == MsgType.ERR:
-            ctrl.close()
+        sw, _connection_addr, ctrl = self._send_control_and_prepare_sw(req.encode(), timeout=1.0, rto=1.0)
+        if sw is None:
             return
-
-        sw = StopAndWait(ctrl, connection_addr, rto=1.0)
 
         seq = 0
         # Envio de datos
@@ -41,12 +32,8 @@ class Client(Connection):
                 seq += 1
 
         # FIN 
-        while True:
-            print("[DEBUG] Enviando BYE")
-            sw.send_bye()
-            if sw.receive_bye():
-                break
-
+        ok = sw.send_bye_with_retry(max_retries=8, quiet_time=0.2)
+        
         print("[DEBUG] Archivo enviado completo espero BYE")
         ctrl.close()
 
@@ -54,19 +41,11 @@ class Client(Connection):
     def download(self):
         print(f"[DEBUG] Solicitando descarga de '{self.name}' desde {self.host}:{self.port}")
 
-        ctrl = socket(AF_INET, SOCK_DGRAM)
-        ctrl.settimeout(1)
-
         req = make_req_download(self.name, VER_SW)
-        ctrl.sendto(req.encode(), (self.host, self.port))
-
-        data, connection_addr = ctrl.recvfrom(MTU)
-        ok = Datagrama.decode(data)
-        if ok.typ == MsgType.ERR:
-            ctrl.close()
+        sw, _connection_addr, ctrl = self._send_control_and_prepare_sw(req.encode(), timeout=1.0, rto=1.0)
+        if sw is None:
             return
 
-        sw = StopAndWait(ctrl, connection_addr, rto=1.0)
         seq = 0
         while True:
             d = sw.receive_data()
@@ -82,12 +61,10 @@ class Client(Connection):
                 self.fileHandler.save_datagram(self.name, d)
                 seq += 1
                 sw.send_ack(seq)
+                
                 if not (d.flags & FLAG_MF):
-                    pass
+                    break
                 
-            elif d.typ == MsgType.BYE:
-                sw.send_bye()
-                break
-                
+        sw.await_bye_and_linger(linger_factor=1, quiet_time=0.2)        
         print("[DEBUG] Descarga finalizada correctamente")
         ctrl.close()
