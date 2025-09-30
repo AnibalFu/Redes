@@ -7,3 +7,6 @@ storage_*/
 
 # Test folders
 tests/data/
+
+# Log folders
+logs/

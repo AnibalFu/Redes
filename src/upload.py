@@ -1,5 +1,5 @@
 from argparse import ArgumentParser, RawDescriptionHelpFormatter, Namespace
-
+from lib.logger import Logger
 from lib.protocolo_amcgf import *
 from lib.client import DEFAULT_NAME, DEFAULT_SRC, Client
 
@@ -25,6 +25,7 @@ def process_args(args: Namespace):
     client.port = args.port if args.port else client.port
     client.src = args.src if args.src else DEFAULT_SRC
     client.name = args.name if args.name else DEFAULT_NAME
+    client.logger = Logger(client.verbose)
 
     if args.protocol == 'SW':
         client.protocol = VER_SW

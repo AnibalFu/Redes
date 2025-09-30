@@ -2,6 +2,7 @@ from argparse import ArgumentParser, Namespace, RawDescriptionHelpFormatter
 
 from lib.client import DEFAULT_NAME, DEFAULT_SRC, Client
 from lib.fileHandler import FileHandler
+from lib.logger import Logger
 from lib.protocolo_amcgf import VER_GBN, VER_SW
 
 def define_flags():
@@ -27,6 +28,7 @@ def process_args(args: Namespace):
     client.src = args.dest if args.dest else DEFAULT_SRC
     client.name = args.name if args.name else DEFAULT_NAME
     client.fileHandler = FileHandler(client.src)
+    client.logger = Logger(client.verbose)
 
     if args.protocol == 'SW':
         client.protocol = VER_SW

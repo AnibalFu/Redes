@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from socket import socket
 
+from lib.logger import Logger
 from src.lib.protocolo_amcgf import Datagrama
 
 @dataclass  
@@ -9,7 +10,7 @@ class GoBackN:
         self.sock = sock
         self.client_addr = client_addr
             
-    def send_data(self, datagrama: Datagrama):
+    def send_data(self, datagrama: Datagrama, logger: Logger | None):
         pass
         
     def receive_data(self):
