@@ -14,7 +14,7 @@ class FTTopo(Topo):
         c2  = self.addHost('h3')  # cliente 2
         self.addLink(srv, s, cls=TCLink, bw=20, delay='5ms', loss=10)      # h1-s1
         self.addLink(c1,  s, cls=TCLink, bw=10, delay='5ms', loss=0)       # h2-s1
-        self.addLink(c2,  s, cls=TCLink, bw=2,  delay='5ms', loss=0)       # h3-s1
+        self.addLink(c2,  s, cls=TCLink, bw=10, delay='5ms', loss=0)       # h3-s1
         
         
 if __name__ == '__main__':

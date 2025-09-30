@@ -2,6 +2,7 @@ from argparse import ArgumentParser, Namespace, RawDescriptionHelpFormatter
 
 from lib.client import DEFAULT_NAME, DEFAULT_SRC, Client
 from lib.fileHandler import FileHandler
+from lib.protocolo_amcgf import VER_GBN, VER_SW
 
 def define_flags():
     parser = ArgumentParser(description='Download file program', formatter_class=RawDescriptionHelpFormatter)
@@ -25,11 +26,14 @@ def process_args(args: Namespace):
     client.port = args.port if args.port else client.port
     client.src = args.dest if args.dest else DEFAULT_SRC
     client.name = args.name if args.name else DEFAULT_NAME
-    client.protocol = args.protocol if args.protocol else client.protocol
     client.fileHandler = FileHandler(client.src)
 
-    return client
+    if args.protocol == 'SW':
+        client.protocol = VER_SW
+    elif args.protocol == 'GBN':
+        client.protocol = VER_GBN
 
+    return client
 
 if __name__ == "__main__":
     

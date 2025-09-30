@@ -211,8 +211,6 @@ class Datagrama:
         )
 
 
-
-
 # Funciones auxiliares payload | encode y decode texto plano
 def _encode_value(v) -> str:
     if isinstance(v, bool):

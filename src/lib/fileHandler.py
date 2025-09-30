@@ -1,5 +1,6 @@
 import os
 import io
+
 from lib.protocolo_amcgf import Datagrama, FLAG_MF
 
 class FileHandlerError(Exception): ...
@@ -16,21 +17,23 @@ class FileHandler:
     def is_filename_used(self, filename: str) -> bool:
         """Verifica si el nombre de archivo ya está en uso"""
         file_path = os.path.join(self.data_path, filename)
+        
         return os.path.exists(file_path)
 
     def open_file(self, filename: str, mode="wb"):
         file_path = os.path.join(self.data_path, filename)
-        f = open(file_path, mode)
-        self.open_files[filename] = f
-        return f
+        file = open(file_path, mode)
+        
+        self.open_files[filename] = file
+        return file
     
     def save_datagram(self, filename: str, datagram: Datagrama):
         if filename not in self.open_files:
             # Abrir siempre en 'wb' para truncar el archivo si ya existe (pisar contenido)
             self.open_file(filename, "wb")
 
-        f = self.open_files[filename]
-        f.write(datagram.payload)
+        file = self.open_files[filename]
+        file.write(datagram.payload)
 
         if not (datagram.flags & FLAG_MF): 
             print(f"[DEBUG] Archivo '{filename}' guardado completo")
@@ -50,16 +53,14 @@ class FileHandler:
         filepath = os.path.join(self.data_path, filename)
         filesize = os.path.getsize(filepath)
         
-        with open(filepath, 'rb') as f:
+        with open(filepath, 'rb') as file:
             while True:
-                payload = f.read(chunk_size)
+                payload = file.read(chunk_size)
+                
                 if not payload:
                     break
-                mf = f.tell() < filesize
-                print(f"[DEBUG] Enviando payload: '{payload}' MF={mf} de tamaño {len(payload)}")
-                yield payload, mf
-
-        
-        
-
-    
+                
+                more_fragments = file.tell() < filesize
+                print(f"[DEBUG] Enviando payload: '{payload}' MF={more_fragments} de tamaño {len(payload)}")
+                
+                yield payload, more_fragments

@@ -12,12 +12,12 @@
 
 ## Integrantes
 
-[Infanti Franciso](https://github.com/FranInfanti)
+- [Infanti Franciso](https://github.com/FranInfanti)
 
-[Anibal Fu](https://github.com/anibalfu)
+- [Anibal Fu](https://github.com/anibalfu)
 
-[Weng Xu Marcos Tomás](https://github.com/wxmarcos)
+- [Weng Xu Marcos Tomás](https://github.com/wxmarcos)
 
-[Camila Figueroa](https://github.com/camilaFigueroaCillo)
+- [Camila Figueroa](https://github.com/camilaFigueroaCillo)
 
-[Giuliana Pazos](https://github.com/giulianapazos)
+- [Giuliana Pazos](https://github.com/giulianapazos)

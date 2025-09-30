@@ -7,7 +7,6 @@ from lib.server import DEFAULT_STORAGE_PATH, Server
 from lib.protocolo_amcgf import *
 from lib.fileHandler import FileHandler
 
-
 def sigint_handler(_: int, frame: FrameType | None):
     server_socket = frame.f_locals['server_socket']
     try:
@@ -37,10 +36,11 @@ def process_args(args: Namespace):
 
     return server
 
-
 if __name__ == '__main__':
     signal(SIGINT, sigint_handler)
+
     parser = define_flags()
     args = parser.parse_args()
+
     server = process_args(args)
     server.run()
