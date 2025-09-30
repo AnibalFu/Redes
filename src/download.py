@@ -41,5 +41,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     client = process_args(args)
-    print(client)
     client.download()
