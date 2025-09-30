@@ -45,6 +45,13 @@ class Server(Connection):
                 print(f"[DEBUG] REQUEST_UPLOAD de {client_addr} payload: {payload}")
                 
                 filename = payload[PAYLOAD_FILENAME_KEY]
+                file_size = payload[FILE_SIZE_KEY]
+
+                if file_size > MAX_FILE_SIZE:
+                    err = make_err(f"El tamaño del archivo excede el máximo permitido de {MAX_FILE_SIZE} bytes")
+                    server_socket.sendto(err.encode(), client_addr)
+                    print(f"[DEBUG] El tamaño del archivo excede el máximo permitido de {MAX_FILE_SIZE} bytes")
+                    continue
                 
                 udp_socket = self._make_udp_socket(bind_addr=('', 0))
                 
@@ -55,6 +62,13 @@ class Server(Connection):
                 print(f"[DEBUG] REQUEST_DOWNLOAD de {client_addr} payload: {payload}")
                 
                 filename = payload[PAYLOAD_FILENAME_KEY]
+
+                if not self.fileHandler.is_filename_used(filename):
+                    err = make_err(f"El archivo '{filename}' no existe en el servidor")
+                    server_socket.sendto(err.encode(), client_addr)
+                    print(f"[DEBUG] El archivo '{filename}' no existe en el servidor")
+                    continue
+
                 print(f"[DEBUG] Filename: {filename}")
                 
                 udp_socket = self._make_udp_socket(bind_addr=('', 0))

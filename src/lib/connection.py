@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from socket import socket, AF_INET, SOCK_DGRAM
 
-from lib.protocolo_amcgf import MTU, VER_SW, Datagrama, MsgType, make_ok
+from lib.protocolo_amcgf import MTU, PAYLOAD_ERR_MSG_KEY, VER_SW, Datagrama, MsgType, make_ok
 from lib.sw import StopAndWait
 from lib.config import *
 
@@ -42,6 +42,7 @@ class Connection:
             raise
         
         if ok.typ == MsgType.ERR:
+            print(f"[SERVER ERROR] {ok.payload.decode().replace(f'{PAYLOAD_ERR_MSG_KEY}=', '')}")
             udp_socket.close()
             return None, None, None
 

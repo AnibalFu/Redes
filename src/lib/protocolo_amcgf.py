@@ -51,6 +51,7 @@ ACK_NONE = 0
 PAYLOAD_DATA_KEY = "chunk" # deprecado
 PAYLOAD_FILENAME_KEY = "filename" # deprecado
 PAYLOAD_ERR_MSG_KEY = "message" # deprecado
+FILE_SIZE_KEY = "file_size"  # deprecado
 
 
 class MsgType(IntEnum):
@@ -274,8 +275,8 @@ def payload_decode(b: bytes) -> dict:
 
 # -------------------- API --------------------
 
-def make_req_upload(filename: str, ver: int) -> Datagrama:
-    return Datagrama(ver, MsgType.REQUEST_UPLOAD, payload=payload_encode({PAYLOAD_FILENAME_KEY: filename}))
+def make_req_upload(filename: str, ver: int, data_size: int) -> Datagrama:
+    return Datagrama(ver, MsgType.REQUEST_UPLOAD, payload=payload_encode({PAYLOAD_FILENAME_KEY: filename, FILE_SIZE_KEY: data_size}))
 
 def make_req_download(filename: str, ver: int) -> Datagrama:
     return Datagrama(ver, MsgType.REQUEST_DOWNLOAD, payload=payload_encode({PAYLOAD_FILENAME_KEY: filename}))
