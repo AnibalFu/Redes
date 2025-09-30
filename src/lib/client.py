@@ -1,3 +1,4 @@
+import os
 from dataclasses import dataclass
 from lib.connection import Connection
 from lib.config import *
@@ -7,14 +8,27 @@ from lib.protocolo_amcgf import FLAG_MF, MSS, VER_SW, MsgType, make_data, make_r
 DEFAULT_NAME = "file.txt"
 DEFAULT_SRC = "./storage_personal"
 
+class ClientError(Exception): ...
+
 @dataclass
 class Client(Connection):
     src: str = None
     name: str = None
     fileHandler: FileHandler = None
 
+    def _check_file_exists(self, path: str) -> None: 
+        """Valida que exista el archivo antes de usarlo.""" 
+        if not path or not os.path.isfile(path): 
+            raise ClientError(f"No se encontró el archivo de origen: {path}")
+
     def upload(self):
-        req = make_req_upload(self.name, VER_SW)
+        try: 
+            self._check_file_exists(self.src) 
+        except ClientError as e: 
+            print(f"[CLIENT ERROR] {e}") 
+            return
+
+        req = make_req_upload(self.name, VER_SW, os.path.getsize(self.src))
         sw, _connection_addr, client_socket = self._send_control_and_prepare_sw(req.encode(), timeout=TIMEOUT_MAX + 0.1, rto=RTO)
         if sw is None:
             return
