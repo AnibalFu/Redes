@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from logging import FileHandler, Logger
 from socket import socket, AF_INET, SOCK_DGRAM
 
 from lib.protocolo_amcgf import MTU, PAYLOAD_ERR_MSG_KEY, VER_SW, Datagrama, MsgType, make_ok
@@ -11,7 +12,9 @@ class Connection:
     quiet: bool = False
     host: str = '10.0.0.1'
     port: int = 6379
-    protocol: int | None = None 
+    protocol: int | None = None
+    logger: Logger | None = None
+    file_handler: FileHandler | None = None
 
     def _make_udp_socket(self, timeout: float | None = None, bind_addr: tuple[str, int] | None = None) -> socket:
         """Create a UDP socket with optional timeout and optional bind address."""

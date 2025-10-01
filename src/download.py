@@ -27,7 +27,7 @@ def process_args(args: Namespace):
     client.port = args.port if args.port else client.port
     client.src = args.dest if args.dest else DEFAULT_SRC
     client.name = args.name if args.name else DEFAULT_NAME
-    client.fileHandler = FileHandler(client.src)
+    client.file_handler = FileHandler(client.src)
     client.logger = Logger(client.verbose)
 
     if args.protocol == 'SW':

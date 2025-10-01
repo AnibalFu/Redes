@@ -97,5 +97,3 @@ class Logger:
             self.ax_rtt.autoscale_view()
             plt.draw()
             plt.pause(10)
-
-    
