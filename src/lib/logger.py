@@ -22,15 +22,20 @@ class Logger:
         os.makedirs(self.output_dir, exist_ok=True)
 
         if self.verbose:
-            self.fig, (self.ax_rtt, self.ax_tp) = plt.subplots(2, 1, figsize=(8, 6))
+            # Para gráfico de Throughput
+            #self.fig, (self.ax_rtt, self.ax_tp) = plt.subplots(2, 1, figsize=(8, 6))
+            
+            self.fig, self.ax_rtt = plt.subplots(figsize=(8, 4))
             self.line_rtt, = self.ax_rtt.plot([], [], label="RTT")
             self.ax_rtt.set_xlabel("Tiempo (s)")
             self.ax_rtt.set_ylabel("RTT (ms)")
             self.ax_rtt.set_title("RTT en tiempo real")
-            self.line_tp, = self.ax_tp.plot([], [], label="Throughput")
-            self.ax_tp.set_xlabel("Tiempo (s)")
-            self.ax_tp.set_ylabel("KB/s")
-            self.ax_tp.set_title("Throughput en tiempo real")
+            
+            # Gráfico de Throughput (opcional)
+            #self.line_tp, = self.ax_tp.plot([], [], label="Throughput")
+            #self.ax_tp.set_xlabel("Tiempo (s)")
+            #self.ax_tp.set_ylabel("KB/s")
+            #self.ax_tp.set_title("Throughput en tiempo real")
             plt.tight_layout()
 
 
