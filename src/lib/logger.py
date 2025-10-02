@@ -1,4 +1,4 @@
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 import time
 import os
 
@@ -21,22 +21,22 @@ class Logger:
         self.output_dir = output_dir
         os.makedirs(self.output_dir, exist_ok=True)
 
-        if self.verbose:
+        #if self.verbose:
             # Para gráfico de Throughput
             #self.fig, (self.ax_rtt, self.ax_tp) = plt.subplots(2, 1, figsize=(8, 6))
             
-            self.fig, self.ax_rtt = plt.subplots(figsize=(8, 4))
-            self.line_rtt, = self.ax_rtt.plot([], [], label="RTT")
-            self.ax_rtt.set_xlabel("Tiempo (s)")
-            self.ax_rtt.set_ylabel("RTT (ms)")
-            self.ax_rtt.set_title("RTT en tiempo real")
+            #self.fig, self.ax_rtt = plt.subplots(figsize=(8, 4))
+            #self.line_rtt, = self.ax_rtt.plot([], [], label="RTT")
+            #self.ax_rtt.set_xlabel("Tiempo (s)")
+            #self.ax_rtt.set_ylabel("RTT (ms)")
+            #self.ax_rtt.set_title("RTT en tiempo real")
             
             # Gráfico de Throughput (opcional)
             #self.line_tp, = self.ax_tp.plot([], [], label="Throughput")
             #self.ax_tp.set_xlabel("Tiempo (s)")
             #self.ax_tp.set_ylabel("KB/s")
             #self.ax_tp.set_title("Throughput en tiempo real")
-            plt.tight_layout()
+            #plt.tight_layout()
 
 
     def log(self, message, quiet=False):
@@ -90,10 +90,12 @@ class Logger:
         with open(filepath, "w") as f:
             f.write(summary)
 
-        if self.verbose:
-            self.line_rtt.set_xdata(self.x_data)
-            self.line_rtt.set_ydata(self.y_data)
-            self.ax_rtt.relim()
-            self.ax_rtt.autoscale_view()
-            plt.draw()
-            plt.pause(10)
+        #if self.verbose:
+            #self.line_rtt.set_xdata(self.x_data)
+            #self.line_rtt.set_ydata(self.y_data)
+            #self.ax_rtt.relim()
+            #self.ax_rtt.autoscale_view()
+            #plt.draw()
+            #plt.pause(10)
+
+    
