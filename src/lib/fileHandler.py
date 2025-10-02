@@ -3,14 +3,10 @@ import io
 
 from lib.protocolo_amcgf import Datagrama, FLAG_MF
 
-class FileHandlerError(Exception): ...
-class KeyNotFoundError(FileHandlerError): ...
-
 """Clase para manejar operaciones de archivos en el servidor"""
 class FileHandler:
     def __init__(self, data_path: str):
         self.data_path = data_path
-        print("Ruta donde se va a guardar FILEHANDLER:", self.data_path)
         self.open_files: dict[str, 'io.BufferedRandom'] = {}
         os.makedirs(self.data_path, exist_ok=True)
 
@@ -46,10 +42,6 @@ class FileHandler:
 
     def get_file_chunks(self, filename: str, chunk_size: int):
         """Generador que devuelve el archivo en chunks de tamaño chunk_size"""
-        
-        if not self.is_filename_used(filename):
-            raise KeyNotFoundError(f"Archivo '{filename}' no encontrado")
-
         filepath = os.path.join(self.data_path, filename)
         filesize = os.path.getsize(filepath)
         

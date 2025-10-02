@@ -3,6 +3,7 @@ import time
 from dataclasses import dataclass
 from socket import socket, timeout as SocketTimeout
 from typing import Tuple, Optional
+from lib.logger import Logger
 from lib.protocolo_amcgf import *
 import time
 from lib.config import *
@@ -39,7 +40,7 @@ class StopAndWait:
                 return datagram
 
     # Se lo mando a peer
-    def send_data(self, datagrama: Datagrama) -> int:
+    def send_data(self, datagrama: Datagrama, logger: Logger | None) -> int:
         self.udp_socket.settimeout(self.rto)
         
         try:
@@ -68,6 +69,9 @@ class StopAndWait:
                     continue
                 
                 elif datagram.ack == expected_ack:
+                    if logger:
+                        rtt = time.time() - t0  
+                        logger.log_rtt(rtt * 1000) 
                     return len(encoded)
                 
                 elif datagram.ack < expected_ack:

@@ -3,17 +3,20 @@ import sys
 from signal import SIGINT, signal
 from types import FrameType
 from argparse import ArgumentParser, Namespace, RawDescriptionHelpFormatter
+
+from lib.logger import Logger
 from lib.server import DEFAULT_STORAGE_PATH, Server   
 from lib.protocolo_amcgf import *
 from lib.fileHandler import FileHandler
 
 def sigint_handler(_: int, frame: FrameType | None):
-    server_socket = frame.f_locals['server_socket']
+    sock = frame.f_locals['sock']
     try:
-        server_socket.close()
+        sock.close()
     except:
-        print(f'\nError: Socket {server_socket} could not be closed')
+        print(f'\nError: Socket {sock} could not be closed')
         sys.exit(-1)
+    
     print('\nGraceful Exit')
     sys.exit(0)    
 
@@ -28,11 +31,14 @@ def define_flags():
 
 def process_args(args: Namespace):
     server = Server()
+
     server.verbose = args.verbose
     server.quiet = args.quiet
     server.host = args.host if args.host else server.host
     server.port = args.port if args.port else server.port    
-    server.fileHandler = FileHandler(args.storage) if args.storage else FileHandler(DEFAULT_STORAGE_PATH)
+    server.file_handler = FileHandler(args.storage) if args.storage else FileHandler(DEFAULT_STORAGE_PATH)
+    server.logger = Logger(server.verbose)
+
 
     return server
 

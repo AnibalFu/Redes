@@ -83,7 +83,7 @@ def test_ack_flag_behavior():
     assert datagram.typ == MsgType.DATA and (datagram.flags & FLAG_ACK) == 0
 
 def test_make_req_upload():
-    upload = make_req_upload(filename='file.bin', ver=VER_SW)
+    upload = make_req_upload(filename='file.bin', ver=VER_SW, data_size=64)
     
     assert upload.typ == MsgType.REQUEST_UPLOAD
 
