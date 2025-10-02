@@ -54,7 +54,7 @@ class Connection:
         return sw, addr, udp_socket
 
 
-    def _send_ok_and_prepare_sw(self, sock: socket, peer_addr: tuple[str, int], rto: float = RTO) -> StopAndWait:
+    def _send_ok_and_prepare_sw(self, sock: socket, peer_addr: tuple[str, int], rto: float = RTO, rcv = None) -> StopAndWait:
         """
         Server-side helper. Sends OK to the peer and returns a configured StopAndWait instance.
         """
@@ -68,4 +68,4 @@ class Connection:
         
         sock.sendto(encoded, peer_addr)
         
-        return StopAndWait(udp_socket=sock, peer=peer_addr, rto=rto)
+        return StopAndWait(udp_socket=sock, peer=peer_addr, rto=rto, recv_fn=rcv)
