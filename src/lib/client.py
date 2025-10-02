@@ -1,9 +1,9 @@
 import os
+
 from dataclasses import dataclass
+
 from lib.connection import Connection
 from lib.config import *
-from lib.fileHandler import FileHandler
-from lib.logger import Logger
 from lib.protocolo_amcgf import FLAG_MF, MSS, VER_SW, MsgType, make_data, make_req_download, make_req_upload
 
 DEFAULT_NAME = "file.txt"
@@ -15,8 +15,6 @@ class ClientError(Exception): ...
 class Client(Connection):
     src: str = None
     name: str = None
-    fileHandler: FileHandler = None
-    logger: Logger = None
 
     def _check_file_exists(self, path: str) -> None: 
         """Valida que exista el archivo antes de usarlo.""" 
@@ -84,9 +82,9 @@ class Client(Connection):
                 continue
             
             if datagram.typ == MsgType.DATA and datagram.seq == seq_number:
-                self.fileHandler.save_datagram(self.name, datagram)
+                self.file_handler.save_datagram(self.name, datagram)
                 
-                self.logger.add_bytes(len(datagram.chunk))
+                # self.logger.add_bytes(len(chunk))
                 
                 seq_number += 1
                 sw.send_ack(seq_number)
