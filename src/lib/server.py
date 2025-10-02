@@ -77,13 +77,15 @@ class Server(Connection):
     
     def handle_upload(self, udp_socket: socket, client_addr: Tuple[str, int], filename: str):
         # Parte del handshake
-        sw = self._send_ok_and_prepare_sw(udp_socket, client_addr, rto=RTO)
+        # sw = self._send_ok_and_prepare_sw(udp_socket, client_addr, rto=RTO)
+        gbn = self._send_ok_and_prepare_gbn(udp_socket, client_addr, rto=RTO)
         print(f"[DEBUG] Handle upload en puerto {udp_socket.getsockname()[1]} para {client_addr}")
 
         seq_number = 0
         while True:
-            datagram = sw.receive_data()
-            
+            # datagram = sw.receive_data()
+
+            datagram = gbn.receive_data()
             if not datagram:
                 continue
             
@@ -92,28 +94,54 @@ class Server(Connection):
                 if datagram.seq == seq_number:
                     self.fileHandler.save_datagram(filename=filename, datagram=datagram)
                     seq_number += 1
-                
-                sw.send_ack(acknum=seq_number)
+                    # En Go-Back-N, el ACK confirma el paquete recibido
+                    gbn.send_ack(acknum=datagram.seq)
+                else:
+                    # Paquete fuera de orden, reenviar ACK del último paquete correcto
+                    if seq_number > 0:
+                        gbn.send_ack(acknum=seq_number - 1)
                 
                 if not (datagram.flags & FLAG_MF):
                     break
     
-        sw.await_bye_and_linger(linger_factor=3, quiet_time=0.2)
+        #sw.await_bye_and_linger(linger_factor=3, quiet_time=0.2)
+        gbn.await_bye_and_linger(linger_factor=3, quiet_time=0.2)
 
         print("[DEBUG] Transferencia finalizada correctamente")
         print("[DEBUG] --------------------------------------")
         udp_socket.close()
         
     def handle_download(self, udp_socket: socket, client_addr: tuple[str, int], filename: str):
-        # Parte del handshake
-        sw = self._send_ok_and_prepare_sw(udp_socket, client_addr, rto=RTO)
-        
-        # Mando DATA
-        for seq_number, (payload, mf) in enumerate(self.fileHandler.get_file_chunks(filename, CHUNK_SIZE)):
-            print(f"[DEBUG] Enviando DATA con seq {seq_number}")
-            sw.send_data(datagrama=make_data(seq=seq_number, chunk=payload, ver=VER_SW, mf=mf))
+        #sw = self._send_ok_and_prepare_sw(udp_socket, client_addr, rto=RTO)
+        gbn = self._send_ok_and_prepare_gbn(udp_socket, client_addr, rto=RTO)
 
-        # Mando BYE
-        sw.send_bye_with_retry(max_retries=8, quiet_time=0.2)
+        
+        #chunks = [payload for payload, mf in self.fileHandler.get_file_chunks(filename, CHUNK_SIZE)]      
+        chunks = [payload for payload, mf in self.fileHandler.get_file_chunks(filename, 50)]
+        total_packets = len(chunks)
+        print(f"[DEBUG] Total de paquetes a enviar: {total_packets}")
+        
+        seq_number = 0
+        while seq_number < total_packets:
+
+            # Envio hasta llenar la ventana
+            while gbn.window.can_send() and seq_number < total_packets:
+                chunk = chunks[seq_number]
+                more_fragments = seq_number < total_packets - 1
+                
+                datagram = make_data(seq=seq_number, chunk=chunk, ver=VER_GBN, mf=more_fragments)
+                gbn.send_data(datagram)
+                
+                print(f"[DEBUG] Enviado paquete {seq_number + 1}/{total_packets}")
+                seq_number += 1
+            
+            ack_received = gbn.receive_ack()
+            if ack_received:
+                print(f"[DEBUG] ACK recibido, ventana base ahora en: {gbn.window.base}")
+            else:
+                print("[DEBUG] Timeout esperando ACK")
+
+        # sw.send_bye_with_retry(max_retries=8, quiet_time=0.2)
+        gbn.send_bye_with_retry(max_retries=8, quiet_time=0.2)
 
         udp_socket.close()
