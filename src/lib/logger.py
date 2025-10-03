@@ -50,7 +50,7 @@ class Logger:
         self.start_time = time.time()
         self.bytes_sent = 0
         self.retransmissions = 0
-        self.log("Transferencia iniciada")
+        self.log("Transferencia iniciada", True)
 
     def add_bytes(self, nbytes: int, retransmission: bool = False):
         self.bytes_sent += nbytes
@@ -74,6 +74,8 @@ class Logger:
 
     def log_final(self, filename: str = 'metrics.txt'):
         """Guardar métricas y mostrar resultados finales"""
+        self.log("Transferencia finalizada", True)
+
         
         duration = time.time() - self.start_time if self.start_time else 0
         throughput = (self.bytes_sent / 1024) / duration if duration > 0 else 0
