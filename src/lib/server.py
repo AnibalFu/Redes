@@ -1,12 +1,10 @@
 import threading
 
-from time import time
 from typing import Tuple
 from queue import Empty, Queue
 from socket import AF_INET, SOCK_DGRAM, socket
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
-from lib.fileHandler import FileHandler
 from lib.connection import Connection
 from lib.config import *
 from lib.protocolo_amcgf import *
@@ -17,8 +15,7 @@ DEFAULT_STORAGE_PATH = './storage_data'
 
 @dataclass
 class Server(Connection):
-    file_handler: FileHandler = None
-    queues = dict()
+    queues: dict = field(default_factory=dict)
 
     @staticmethod
     def _queue_recv_fn(timeout: float, queue: Queue) -> bytes | None:
@@ -52,7 +49,7 @@ class Server(Connection):
         data = queue.get(block=True)
         
         try:
-            datagram = Datagrama.decode(buf=data)
+            datagram = Datagram.decode(buf=data)
         except Exception:
             try:
                 encoded = make_err("Error: Error al decodificar datagrama").encode()
@@ -62,11 +59,13 @@ class Server(Connection):
             sock.sendto(encoded, addr)
             return
             
+        self.protocol = datagram.ver
+
         if datagram.typ == MsgType.REQUEST_UPLOAD:
             payload = payload_decode(datagram.payload)
             
             filename = payload[PAYLOAD_FILENAME_KEY]
-            file_size = payload[FILE_SIZE_KEY]
+            file_size = payload[PAYLOAD_FILE_SIZE_KEY]
 
             if file_size > MAX_FILE_SIZE:
                 try:
@@ -96,7 +95,7 @@ class Server(Connection):
             self.handle_download(sock=sock, addr=addr, filename=filename, queue=queue)
     
     def handle_upload(self, sock: socket, addr: Tuple[str, int], filename: str, queue: Queue):
-        sw = self._send_ok_and_prepare_sw(sock=sock, peer_addr=addr, rto=RTO, rcv=lambda t: self._queue_recv_fn(t, queue))
+        sw = self._send_ok_and_prepare_sw(sock=sock, peer_addr=addr, rcv=lambda t: Server._queue_recv_fn(t, queue))
 
         seq_number = 0
         while True:
@@ -122,17 +121,13 @@ class Server(Connection):
         del self.queues[addr]
 
     def handle_download(self, sock: socket, addr: tuple[str, int], filename: str, queue: Queue):
-        sw = self._send_ok_and_prepare_sw(sock=sock, peer_addr=addr, rto=RTO, rcv=lambda t: self._queue_recv_fn(t, queue))
+        sw = self._send_ok_and_prepare_sw(sock=sock, peer_addr=addr, rcv=lambda t: self._queue_recv_fn(t, queue))
 
-        for seq_number, (payload, mf) in enumerate(self.file_handler.get_file_chunks(filename, CHUNK_SIZE)):
-            sw.send_data(datagrama=make_data(seq=seq_number, chunk=payload, ver=VER_SW, mf=mf))
+        chunks = self.file_handler.get_file_chunks(filename, CHUNK_SIZE)
+        for seq_number, (payload, mf) in enumerate(chunks):
+            sw.send_data(datagrama=make_data(seq=seq_number, chunk=payload, ver=self.protocol, mf=mf))
 
         sw.send_bye_with_retry(max_retries=8, quiet_time=0.2)
 
         del self.queues[addr]
     
-
-
-
-
-        

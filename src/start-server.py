@@ -7,7 +7,7 @@ from argparse import ArgumentParser, Namespace, RawDescriptionHelpFormatter
 from lib.logger import Logger
 from lib.server import DEFAULT_STORAGE_PATH, Server   
 from lib.protocolo_amcgf import *
-from lib.fileHandler import FileHandler
+from lib.file_handler import FileHandler
 
 def sigint_handler(_: int, frame: FrameType | None):
     sock = frame.f_locals['sock']
