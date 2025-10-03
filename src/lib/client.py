@@ -105,7 +105,8 @@ class Client(Connection):
                 
         sw.await_bye_and_linger(linger_factor=1, quiet_time=0.2) 
         
-        self.logger.log_final(filename=f"{self.name}_metrics.txt")
+        filename = os.path.basename(self.name) + "_metrics.txt"
+        self.logger.log_final(filename=filename)
         self.logger.log("[INFO] Descarga finalizada correctamente")
         
         sock.close()

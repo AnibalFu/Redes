@@ -127,7 +127,7 @@ class Server(Connection):
         for seq_number, (payload, mf) in enumerate(chunks):
             sw.send_data(datagrama=make_data(seq=seq_number, chunk=payload, ver=self.protocol, mf=mf))
 
-        sw.send_bye_with_retry(max_retries=8, quiet_time=0.2)
+        sw.send_bye_with_retry(retries=8, quiet_time=0.2)
 
         del self.queues[addr]
     
