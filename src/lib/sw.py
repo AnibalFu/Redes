@@ -4,15 +4,23 @@ from dataclasses import dataclass
 from socket import socket, timeout as SocketTimeout
 from typing import Tuple, Optional
 from lib.logger import Logger
+from lib.protocol import Protocol
 from lib.protocolo_amcgf import *
 import time
 from lib.config import *
 
 @dataclass
-class StopAndWait:
+class StopAndWait(Protocol):
     udp_socket: socket # Mio
     peer: Tuple[str, int] # Suyo
     rto: float = RTO # Retardo de timeout
+    
+    def __init__(self, udp_socket: socket, peer: Tuple[str, int], rto: float = RTO):
+        super().__init__(udp_socket, peer, rto)
+        self.udp_socket = udp_socket
+        self.peer = peer
+        self.client_addr = peer  # Alias para compatibilidad con Protocol
+        self.rto = rto
     
     def send_upload(self, filename: str) -> None:
         req = make_req_upload(filename=filename, ver=VER_SW)
@@ -40,7 +48,7 @@ class StopAndWait:
                 return datagram
 
     # Se lo mando a peer
-    def send_data(self, datagrama: Datagrama, logger: Logger | None) -> int:
+    def send_data(self, datagrama: Datagrama, logger: Optional[Logger] = None) -> None:
         self.udp_socket.settimeout(self.rto)
         
         try:
@@ -72,7 +80,7 @@ class StopAndWait:
                     if logger:
                         rtt = time.time() - t0  
                         logger.log_rtt(rtt * 1000) 
-                    return len(encoded)
+                    return  # Void return para cumplir interfaz
                 
                 elif datagram.ack < expected_ack:
                     continue
@@ -106,7 +114,25 @@ class StopAndWait:
         self.udp_socket.sendto(encoded, self.peer)
 
     # Recibo de peer
-    def receive_ack(self, expected_ack: int) -> bool:
+    def receive_ack(self) -> Optional[Datagrama]:
+        """Interfaz compatible con Protocol - recibe cualquier ACK"""
+        self.udp_socket.settimeout(self.rto)
+        
+        try:
+            bytes, _ = self.udp_socket.recvfrom(MTU)
+        except SocketTimeout:
+            return None
+        
+        try:
+            datagram = Datagrama.decode(bytes)
+            if datagram.typ == MsgType.ACK:
+                return datagram
+        except (Truncated, BadChecksum):
+            pass
+        
+        return None
+    
+    def _receive_expected_ack(self, expected_ack: int) -> bool:
         self.udp_socket.settimeout(self.rto)
         
         try:

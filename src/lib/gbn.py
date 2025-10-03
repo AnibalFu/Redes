@@ -5,14 +5,16 @@ from typing import Optional
 
 from lib.config import RTO
 from lib.logger import Logger
+from lib.protocol import Protocol
 from lib.protocolo_amcgf import FLAG_MF, MTU, VER_GBN, VER_SW, BadChecksum, Datagrama, MsgType, Truncated, make_ack, make_bye, make_ok, make_req_download, make_req_upload
 from lib.window import Window
 
 @dataclass  
-class GoBackN:
+class GoBackN(Protocol):
     rto: float = RTO 
     
     def __init__(self, sock: socket, client_addr: tuple[str, int], rto: float = RTO):
+        super().__init__(sock, client_addr, rto)
         self.udp_socket = sock
         self.client_addr = client_addr
         self.rto = rto
@@ -51,13 +53,12 @@ class GoBackN:
             self.send_datagram(datagrama, logger)
 
         else:
-            # Procesar ACKs de forma no bloqueante 
             ack_received = self.receive_ack()
             if ack_received:
                 print(f"[DEBUG] ACK recibido, ventana base ahora en: {self.window.base}")
 
     def send_datagram(self, datagrama: Datagrama, logger: Logger | None = None):
-        # Verificar timeout primero
+
         if self.timer is not None and (time.time() - self.timer) > self.rto:
             print("[DEBUG] Timeout - reenviando ventana completa")
             # timeout, reenvío todos los paquetes desde base hasta next_seq_num-1
@@ -125,7 +126,7 @@ class GoBackN:
             datagram = Datagrama.decode(bytes)
             print(f"[DEBUG] Recibido DATA GBN con seq {datagram.seq}, esperando seq {self.window.base}")
             
-            # En el receptor, verificar si es el paquete esperado
+            
             print(f"[DEBUG] Paquete recibido seq={datagram.seq}, esperado={self.window.base}")
             return datagram
         
@@ -146,6 +147,7 @@ class GoBackN:
     ''' aux '''
 
     def send_bye_with_retry(self, max_retries: int = 8, quiet_time: float = 0.2) -> bool:
+        print("[DEBUG] SEND BYE")
         self.udp_socket.settimeout(self.rto)
         
         bye = make_bye(ver=VER_GBN)
@@ -157,7 +159,7 @@ class GoBackN:
 
         for _ in range(max_retries):
             self.udp_socket.sendto(encoded, self.client_addr)
-            
+            print("[DEBUG] WAITING BYE RESPONSE")
             try:
                 bytes, _ = self.udp_socket.recvfrom(MTU)
             except SocketTimeout:
@@ -184,7 +186,8 @@ class GoBackN:
         return False
     
     def await_bye_and_linger(self, linger_factor: int = 2, quiet_time: float = 0.2) -> None:
-        self.udp_socket.settimeout(self.rto)
+        print("[DEBUG] AWAIT BYE AND LINGER")
+        self.udp_socket.settimeout(linger_factor * self.rto)
 
         while True:
             try:
@@ -210,7 +213,7 @@ class GoBackN:
                     try:
                         bytes, _ = self.udp_socket.recvfrom(MTU)
                     except SocketTimeout:
-                        continue
+                        break
                     
                     try:
                         datagram = Datagrama.decode(bytes)

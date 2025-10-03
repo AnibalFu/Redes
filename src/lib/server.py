@@ -5,6 +5,7 @@ from typing import Tuple
 from lib.fileHandler import FileHandler
 from lib.connection import Connection
 from lib.config import *
+from lib.protocol import Protocol
 from lib.protocolo_amcgf import *
         
 # A futuro restar key de data
@@ -42,6 +43,7 @@ class Server(Connection):
             # Tipos de mensajes aceptados de cliente
             if datagram.typ == MsgType.REQUEST_UPLOAD:
                 payload = payload_decode(datagram.payload)
+                protocol = datagram.ver
                 print(f"[DEBUG] REQUEST_UPLOAD de {client_addr} payload: {payload}")
                 
                 filename = payload[PAYLOAD_FILENAME_KEY]
@@ -55,10 +57,11 @@ class Server(Connection):
                 
                 udp_socket = self._make_udp_socket(bind_addr=('', 0))
                 
-                threading.Thread(target=self.handle_upload, args=(udp_socket, client_addr, filename), daemon=True).start()
+                threading.Thread(target=self.handle_upload, args=(udp_socket, client_addr, filename, protocol), daemon=True).start()
 
             elif datagram.typ == MsgType.REQUEST_DOWNLOAD:
                 payload = payload_decode(datagram.payload)
+                protocol = datagram.ver
                 print(f"[DEBUG] REQUEST_DOWNLOAD de {client_addr} payload: {payload}")
                 
                 filename = payload[PAYLOAD_FILENAME_KEY]
@@ -73,19 +76,17 @@ class Server(Connection):
                 
                 udp_socket = self._make_udp_socket(bind_addr=('', 0))
                 
-                threading.Thread(target=self.handle_download, args=(udp_socket, client_addr, filename), daemon=True).start()
-    
-    def handle_upload(self, udp_socket: socket, client_addr: Tuple[str, int], filename: str):
+                threading.Thread(target=self.handle_download, args=(udp_socket, client_addr, filename, protocol), daemon=True).start()
+
+    def handle_upload(self, udp_socket: socket, client_addr: Tuple[str, int], filename: str, ver: int):
         # Parte del handshake
-        # sw = self._send_ok_and_prepare_sw(udp_socket, client_addr, rto=RTO)
-        gbn = self._send_ok_and_prepare_gbn(udp_socket, client_addr, rto=RTO)
+        protocol = self._send_ok_and_prepare_protocol(ver, udp_socket, client_addr, rto=RTO)
         print(f"[DEBUG] Handle upload en puerto {udp_socket.getsockname()[1]} para {client_addr}")
 
         seq_number = 0
         while True:
-            # datagram = sw.receive_data()
 
-            datagram = gbn.receive_data()
+            datagram = protocol.receive_data()
             if not datagram:
                 continue
             
@@ -95,33 +96,26 @@ class Server(Connection):
                 if datagram.seq == seq_number:
                     self.fileHandler.save_datagram(filename=filename, datagram=datagram)
                     seq_number += 1
-                    gbn.send_ack(acknum=datagram.seq)
+                    protocol.send_ack(acknum=datagram.seq)
                 
                 else:
 
                     # Paquete fuera de orden, reenviar ACK del último paquete correcto
                     if seq_number > 0:
-                        gbn.send_ack(acknum=seq_number - 1)
+                        protocol.send_ack(acknum=seq_number - 1)
                 
                 if not (datagram.flags & FLAG_MF):
+                    print("[DEBUG] LAST FRAGMENT RECEIVED")
                     break
     
-        #sw.await_bye_and_linger(linger_factor=3, quiet_time=0.2)
-        gbn.await_bye_and_linger(linger_factor=3, quiet_time=0.2)
-
-        print("[DEBUG] Transferencia finalizada correctamente")
-        print("[DEBUG] --------------------------------------")
+        protocol.await_bye_and_linger(linger_factor=3, quiet_time=0.2)
         udp_socket.close()
         
-    def handle_download(self, udp_socket: socket, client_addr: tuple[str, int], filename: str):
-        #sw = self._send_ok_and_prepare_sw(udp_socket, client_addr, rto=RTO)
-        gbn = self._send_ok_and_prepare_gbn(udp_socket, client_addr, rto=RTO)
+    def handle_download(self, udp_socket: socket, client_addr: tuple[str, int], filename: str, ver: int):
+        protocol = self._send_ok_and_prepare_protocol(ver, udp_socket, client_addr, rto=RTO)
 
         for seq_number, (payload, mf) in enumerate(self.fileHandler.get_file_chunks(filename, CHUNK_SIZE)):
-            gbn.send_data(datagrama=make_data(seq=seq_number, chunk=payload, ver=VER_GBN, mf=mf))
+            protocol.send_data(datagrama=make_data(seq=seq_number, chunk=payload, ver=VER_GBN, mf=mf))
             
-        # sw.send_bye_with_retry(max_retries=8, quiet_time=0.2)
-        gbn.send_bye_with_retry(max_retries=8, quiet_time=0.2)
-        print("[DEBUG] Transferencia finalizada correctamente")
-        print("[DEBUG] --------------------------------------")
+        protocol.send_bye_with_retry(max_retries=8, quiet_time=0.2)
         udp_socket.close()

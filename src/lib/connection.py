@@ -1,7 +1,9 @@
 from dataclasses import dataclass
 from socket import socket, AF_INET, SOCK_DGRAM
+from typing_extensions import Protocol
 
 from lib.gbn import GoBackN
+from lib.protocol import Protocol, create_protocol
 from lib.protocolo_amcgf import MTU, PAYLOAD_ERR_MSG_KEY, VER_GBN, VER_SW, Datagrama, MsgType, make_ok
 from lib.sw import StopAndWait
 from lib.config import *
@@ -24,11 +26,11 @@ class Connection:
             udp_socket.settimeout(timeout)
         
         return udp_socket
-
-    def _send_control_and_prepare_sw(self, req_bytes: bytes, timeout: float = TIMEOUT_MAX, rto: float = RTO) -> tuple[StopAndWait | None, tuple[str, int] | None, socket | None]:
+    
+    def _send_control_and_prepare_protocol(self, ver: int, req_bytes: bytes, timeout: float = TIMEOUT_MAX, rto: float = RTO) -> tuple[Protocol | None, tuple[str, int] | None, socket | None]:
         """
         Client-side helper.
-        Sends a control request (already encoded), waits for response, handles ERR, and returns a configured StopAndWait instance,
+        Sends a control request (already encoded), waits for response, handles ERR, and returns a configured Protocol instance,
         the peer address, and the underlying control socket. Returns (None, None, None) on ERR.
         """
 
@@ -46,13 +48,12 @@ class Connection:
             print(f"[SERVER ERROR] {ok.payload.decode().replace(f'{PAYLOAD_ERR_MSG_KEY}=', '')}")
             udp_socket.close()
             return None, None, None
-
-        sw = StopAndWait(udp_socket=udp_socket, peer=addr, rto=rto)
         
-        return sw, addr, udp_socket
+        protocol = create_protocol(ver, udp_socket, addr, rto=rto)
+        
+        return protocol, addr, udp_socket
 
-
-    def _send_ok_and_prepare_sw(self, sock: socket, peer_addr: tuple[str, int], rto: float = RTO) -> StopAndWait:
+    def _send_ok_and_prepare_protocol(self, ver: int, sock: socket, peer_addr: tuple[str, int], rto: float = RTO) -> StopAndWait:
         """
         Server-side helper. Sends OK to the peer and returns a configured StopAndWait instance.
         """
@@ -65,47 +66,5 @@ class Connection:
             raise
         
         sock.sendto(encoded, peer_addr)
-        
-        return StopAndWait(udp_socket=sock, peer=peer_addr, rto=rto)
 
-    def _send_ok_and_prepare_gbn(self, sock: socket, peer_addr: tuple[str, int], rto: float = RTO) -> StopAndWait:
-        """
-        Server-side helper. Sends OK to the peer and returns a configured GoBackN instance.
-        """
-
-        ok = make_ok(ver=VER_GBN)
-        
-        try:
-            encoded = ok.encode()
-        except Exception:
-            raise
-        
-        sock.sendto(encoded, peer_addr)
-        
-        return GoBackN(sock, peer_addr, rto=rto)
-
-    def _send_control_and_prepare_gbn(self, req_bytes: bytes, timeout: float = TIMEOUT_MAX, rto: float = RTO) -> tuple[GoBackN | None, tuple[str, int] | None, socket | None]:
-        """
-        Client-side helper.
-        Sends a control request (already encoded), waits for response, handles ERR, and returns a configured GoBackN instance,
-        the peer address, and the underlying control socket. Returns (None, None, None) on ERR.
-        """
-
-        udp_socket = self._make_udp_socket(timeout=timeout)
-        udp_socket.sendto(req_bytes, (self.host, self.port))
-
-        bytes, addr = udp_socket.recvfrom(MTU)
-        
-        try:
-            ok = Datagrama.decode(bytes)
-        except Exception:
-            raise
-        
-        if ok.typ == MsgType.ERR:
-            print(f"[SERVER ERROR] {ok.payload.decode().replace(f'{PAYLOAD_ERR_MSG_KEY}=', '')}")
-            udp_socket.close()
-            return None, None, None
-
-        gbn = GoBackN(udp_socket, addr, rto)
-        
-        return gbn, addr, udp_socket
+        return create_protocol(ver, sock, peer_addr, rto=rto)

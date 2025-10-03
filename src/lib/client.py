@@ -4,7 +4,8 @@ from lib.connection import Connection
 from lib.config import *
 from lib.fileHandler import FileHandler
 from lib.logger import Logger
-from lib.protocolo_amcgf import FLAG_MF, MSS, VER_GBN, VER_SW, MsgType, make_data, make_req_download, make_req_upload
+from lib.protocol import create_protocol, Protocol
+from lib.protocolo_amcgf import FLAG_MF, MSS, MsgType, make_data, make_req_download, make_req_upload
 
 DEFAULT_NAME = "file.txt"
 DEFAULT_SRC = "./storage_personal"
@@ -17,6 +18,9 @@ class Client(Connection):
     name: str = None
     fileHandler: FileHandler = None
     logger: Logger = None
+    
+    def _create_protocol_instance(self, socket, connection_addr) -> Protocol:
+        return create_protocol(self._get_protocol_type(), socket, connection_addr, rto=RTO)
 
     def _check_file_exists(self, path: str) -> None: 
         """Valida que exista el archivo antes de usarlo.""" 
@@ -35,71 +39,33 @@ class Client(Connection):
         # Comienza la transferencia
         self.logger.start_transfer()
 
-        req = make_req_upload(self.name, VER_SW, os.path.getsize(self.src))
-        #sw, _connection_addr, client_socket = self._send_control_and_prepare_sw(req.encode(), timeout=TIMEOUT_MAX + 0.1, rto=RTO)
-        #if sw is None:
-            #return
-
-        gbn, _connection_addr, client_socket = self._send_control_and_prepare_gbn(req.encode(), timeout=TIMEOUT_MAX + 0.1, rto=RTO)
-        if gbn is None:
+        req = make_req_upload(self.name, self.protocol, os.path.getsize(self.src))
+        
+        protocol_instance, _connection_addr, client_socket = self._send_control_and_prepare_protocol(self.protocol, req.encode(), timeout=TIMEOUT_MAX + 0.1, rto=RTO)    
+        if protocol_instance is None:
             return
         
-        '''
-        chunks = []
-        with open(self.src, 'rb') as file:
-            while True:
-                #chunk = file.read(MSS) 
-                chunk = file.read(200)  # para probar mas facil
-                if not chunk:
-                    break
-                chunks.append(chunk)
-                
-        total_packets = len(chunks)
-        print(f"[DEBUG] Total de paquetes a enviar: {total_packets}")
-        
-        seq_number = 0
-        while seq_number < total_packets:
-
-            # Enviar paquetes hasta llenar la ventana
-            while gbn.window.can_send() and seq_number < total_packets:
-                chunk = chunks[seq_number]
-                more_fragments = seq_number < total_packets - 1
-                
-                datagram = make_data(seq=seq_number, chunk=chunk, ver=VER_GBN, mf=more_fragments)
-                gbn.send_data(datagram)
-                
-                print(f"[DEBUG] Enviado paquete {seq_number + 1}/{total_packets}")
-                seq_number += 1
-            
-            # Procesar ACKs de forma no bloqueante (con timeout corto)
-            ack_received = gbn.receive_ack()
-            if ack_received:
-                print(f"[DEBUG] ACK recibido, ventana base ahora en: {gbn.window.base}")
-            # No hay else - continúa el loop para reenviar si hay timeout
-        '''
          
         seq_number = 0
         # Envio de datos
         with open(self.src, 'rb') as file:
             while True:
-                # chunk = file.read(MSS)
-                chunk = file.read(2)  # para probar mas facil
+                chunk = file.read(MSS)
+                # chunk = file.read(2)  # para probar mas facil
                 if not chunk:
                     break
 
                 more_fragments = file.peek(1) != b''
                 
                 datagram = make_data(seq=seq_number, chunk=chunk, ver=self.protocol, mf=more_fragments)
-                gbn.send_data(datagram, self.logger)
+                protocol_instance.send_data(datagram, self.logger)
 
                 self.logger.add_bytes(len(chunk))
 
-                seq_number += 1 
+                seq_number += 1
 
-
-
-        #ok = sw.send_bye_with_retry(max_retries=8, quiet_time=0.2)
-        ok = gbn.send_bye_with_retry(max_retries=8, quiet_time=0.2)
+        # Cerrar conexión usando polimorfismo
+        ok = protocol_instance.send_bye_with_retry(max_retries=8, quiet_time=0.2)
         self.logger.log_final(filename=f"{self.name}_metrics.txt")
         self.logger.log("Archivo enviado completo, espero BYE")
         client_socket.close()
@@ -109,42 +75,36 @@ class Client(Connection):
 
         self.logger.start_transfer()
 
-        req = make_req_download(self.name, VER_SW)
-        #sw, _connection_addr, client_socket = self._send_control_and_prepare_sw(req.encode(), timeout=TIMEOUT_MAX + 0.1, rto=RTO)
-        #if sw is None:
-            #return
+        req = make_req_download(self.name, self.protocol)
 
-        gbn, _connection_addr, client_socket = self._send_control_and_prepare_gbn(req.encode(), timeout=TIMEOUT_MAX + 0.1, rto=RTO)
-        if gbn is None:
+        protocol_instance, _connection_addr, client_socket = self._send_control_and_prepare_protocol(self.protocol, req.encode(), timeout=TIMEOUT_MAX + 0.1, rto=RTO)  
+        if protocol_instance is None:
             return
 
         seq_number = 0
         while True:
-            #datagram = sw.receive_data()
-            datagram = gbn.receive_data()
+            datagram = protocol_instance.receive_data()
             
             if not datagram:
                 continue
             
             if datagram.typ == MsgType.DATA and datagram.seq < seq_number:
-                #sw.send_ack(datagram.seq + 1)
-                gbn.send_ack(datagram.seq + 1)
+                protocol_instance.send_ack(datagram.seq + 1)
                 continue
             
             if datagram.typ == MsgType.DATA and datagram.seq == seq_number:
                 self.fileHandler.save_datagram(self.name, datagram)
                 
-                self.logger.add_bytes(len(datagram.payload)) # esto creo que no es asi
+                self.logger.add_bytes(len(datagram.payload))
                 
                 seq_number += 1
-                #sw.send_ack(seq_number)
-                gbn.send_ack(seq_number)
+                protocol_instance.send_ack(seq_number)
                 
                 if not (datagram.flags & FLAG_MF):
+                    print("[DEBUG] LAST FRAGMENT RECEIVED")
                     break
                 
-        #sw.await_bye_and_linger(linger_factor=1, quiet_time=0.2) 
-        #gbn.await_bye_and_linger(linger_factor=1, quiet_time=0.2)
+        protocol_instance.await_bye_and_linger(linger_factor=1, quiet_time=0.2)
         self.logger.log_final(filename=f"{self.name}_metrics.txt")
         self.logger.log("Descarga finalizada correctamente")
         client_socket.close()
