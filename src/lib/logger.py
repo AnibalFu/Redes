@@ -2,9 +2,12 @@
 import time
 import os
 
+PACKET_RATE = 100  # Log every 100 packets
+
 class Logger:
     def __init__(self, verbose: bool = False, output_dir: str = 'logs'):
         self.verbose = verbose
+        print(f"[INFO] Logger initialized. Verbose mode is {'on' if self.verbose else 'off'}.")
 
         # Datos para RTT
         self.x_data = []
@@ -50,10 +53,12 @@ class Logger:
         self.log("Transferencia iniciada")
 
     def add_bytes(self, nbytes: int, retransmission: bool = False):
-        """Registrar bytes enviados"""
         self.bytes_sent += nbytes
         if retransmission:
             self.retransmissions += 1
+        if self.packets_sent % PACKET_RATE == 0:  
+            self.log(f"[INFO] Bytes enviados: {self.bytes_sent}, Retransmisiones: {self.retransmissions}")
+
 
     def log_rtt(self, rtt: float):
         """Registrar un valor de RTT"""
@@ -61,7 +66,8 @@ class Logger:
         elapsed = now - self.start_time if self.start_time else 0
         self.rtt_list.append(rtt)
         self.packets_sent += 1
-
+        if self.packets_sent % PACKET_RATE == 0:
+            self.log(f"[RTT] Paquete {self.packets_sent}: RTT={rtt*1000:.2f} ms, Tiempo transcurrido={elapsed:.2f} s")
         if self.verbose:
             self.x_data.append(elapsed)
             self.y_data.append(rtt)

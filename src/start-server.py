@@ -4,7 +4,6 @@ from signal import SIGINT, signal
 from types import FrameType
 from argparse import ArgumentParser, Namespace, RawDescriptionHelpFormatter
 
-from lib.logger import Logger
 from lib.server import DEFAULT_STORAGE_PATH, Server   
 from lib.protocolo_amcgf import *
 from lib.file_handler import FileHandler
@@ -37,7 +36,6 @@ def process_args(args: Namespace):
     server.host = args.host if args.host else server.host
     server.port = args.port if args.port else server.port    
     server.file_handler = FileHandler(args.storage) if args.storage else FileHandler(DEFAULT_STORAGE_PATH)
-    server.logger = Logger(server.verbose)
 
 
     return server

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from lib.connection import Connection
 from lib.config import *
+from lib.logger import Logger
 from lib.protocolo_amcgf import FLAG_MF, MSS, MsgType, make_data, make_req_download, make_req_upload
 
 DEFAULT_NAME = "file.txt"
@@ -15,6 +16,7 @@ class ClientError(Exception): ...
 class Client(Connection):
     src: str | None = None
     name: str | None = None
+    logger: Logger | None = None
 
     def _check_path(self, path: str) -> None: 
         """Valida que exista el archivo antes de usarlo."""
