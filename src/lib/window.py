@@ -20,7 +20,6 @@ class Window:
             return self.next_seq_num
         
     def mark_received(self, acknum: int):
-        # El ACK confirma que se recibieron correctamente todos los paquetes hasta acknum
         if acknum >= self.base:
             self.base = acknum + 1
         print(f"[DEBUG] Ventana movida. Base: {self.base}, Next_seq_num: {self.next_seq_num}")

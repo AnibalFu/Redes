@@ -4,7 +4,7 @@ from lib.connection import Connection
 from lib.config import *
 from lib.fileHandler import FileHandler
 from lib.logger import Logger
-from lib.protocolo_amcgf import FLAG_MF, MSS, VER_SW, MsgType, make_data, make_req_download, make_req_upload
+from lib.protocolo_amcgf import FLAG_MF, MSS, VER_GBN, VER_SW, MsgType, make_data, make_req_download, make_req_upload
 
 DEFAULT_NAME = "file.txt"
 DEFAULT_SRC = "./storage_personal"
@@ -44,11 +44,12 @@ class Client(Connection):
         if gbn is None:
             return
         
+        '''
         chunks = []
         with open(self.src, 'rb') as file:
             while True:
-                chunk = file.read(MSS) 
-                # chunk = file.read(8)  # para probar mas facil
+                #chunk = file.read(MSS) 
+                chunk = file.read(200)  # para probar mas facil
                 if not chunk:
                     break
                 chunks.append(chunk)
@@ -59,25 +60,44 @@ class Client(Connection):
         seq_number = 0
         while seq_number < total_packets:
 
-            # Envio hasta llenar la ventana
+            # Enviar paquetes hasta llenar la ventana
             while gbn.window.can_send() and seq_number < total_packets:
                 chunk = chunks[seq_number]
                 more_fragments = seq_number < total_packets - 1
                 
-                datagram = make_data(seq=seq_number, chunk=chunk, ver=self.protocol, mf=more_fragments)
-                gbn.send_data(datagram, self.logger)
+                datagram = make_data(seq=seq_number, chunk=chunk, ver=VER_GBN, mf=more_fragments)
+                gbn.send_data(datagram)
                 
-                self.logger.add_bytes(len(chunk))
                 print(f"[DEBUG] Enviado paquete {seq_number + 1}/{total_packets}")
                 seq_number += 1
             
+            # Procesar ACKs de forma no bloqueante (con timeout corto)
             ack_received = gbn.receive_ack()
             if ack_received:
                 print(f"[DEBUG] ACK recibido, ventana base ahora en: {gbn.window.base}")
-            else:
-                print("[DEBUG] Timeout esperando ACK")
-
+            # No hay else - continúa el loop para reenviar si hay timeout
+        '''
          
+        seq_number = 0
+        # Envio de datos
+        with open(self.src, 'rb') as file:
+            while True:
+                # chunk = file.read(MSS)
+                chunk = file.read(2)  # para probar mas facil
+                if not chunk:
+                    break
+
+                more_fragments = file.peek(1) != b''
+                
+                datagram = make_data(seq=seq_number, chunk=chunk, ver=self.protocol, mf=more_fragments)
+                gbn.send_data(datagram, self.logger)
+
+                self.logger.add_bytes(len(chunk))
+
+                seq_number += 1 
+
+
+
         #ok = sw.send_bye_with_retry(max_retries=8, quiet_time=0.2)
         ok = gbn.send_bye_with_retry(max_retries=8, quiet_time=0.2)
         self.logger.log_final(filename=f"{self.name}_metrics.txt")

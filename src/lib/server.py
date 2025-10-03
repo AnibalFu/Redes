@@ -91,12 +91,14 @@ class Server(Connection):
             
             if datagram.typ == MsgType.DATA:
                 print(f"[DEBUG] Recibido DATA con seq {datagram.seq} esperado {seq_number}")
+                
                 if datagram.seq == seq_number:
                     self.fileHandler.save_datagram(filename=filename, datagram=datagram)
                     seq_number += 1
-                    # En Go-Back-N, el ACK confirma el paquete recibido
                     gbn.send_ack(acknum=datagram.seq)
+                
                 else:
+
                     # Paquete fuera de orden, reenviar ACK del último paquete correcto
                     if seq_number > 0:
                         gbn.send_ack(acknum=seq_number - 1)
@@ -115,33 +117,11 @@ class Server(Connection):
         #sw = self._send_ok_and_prepare_sw(udp_socket, client_addr, rto=RTO)
         gbn = self._send_ok_and_prepare_gbn(udp_socket, client_addr, rto=RTO)
 
-        
-        #chunks = [payload for payload, mf in self.fileHandler.get_file_chunks(filename, CHUNK_SIZE)]      
-        chunks = [payload for payload, mf in self.fileHandler.get_file_chunks(filename, 50)]
-        total_packets = len(chunks)
-        print(f"[DEBUG] Total de paquetes a enviar: {total_packets}")
-        
-        seq_number = 0
-        while seq_number < total_packets:
-
-            # Envio hasta llenar la ventana
-            while gbn.window.can_send() and seq_number < total_packets:
-                chunk = chunks[seq_number]
-                more_fragments = seq_number < total_packets - 1
-                
-                datagram = make_data(seq=seq_number, chunk=chunk, ver=VER_GBN, mf=more_fragments)
-                gbn.send_data(datagram)
-                
-                print(f"[DEBUG] Enviado paquete {seq_number + 1}/{total_packets}")
-                seq_number += 1
+        for seq_number, (payload, mf) in enumerate(self.fileHandler.get_file_chunks(filename, CHUNK_SIZE)):
+            gbn.send_data(datagrama=make_data(seq=seq_number, chunk=payload, ver=VER_GBN, mf=mf))
             
-            ack_received = gbn.receive_ack()
-            if ack_received:
-                print(f"[DEBUG] ACK recibido, ventana base ahora en: {gbn.window.base}")
-            else:
-                print("[DEBUG] Timeout esperando ACK")
-
         # sw.send_bye_with_retry(max_retries=8, quiet_time=0.2)
         gbn.send_bye_with_retry(max_retries=8, quiet_time=0.2)
-
+        print("[DEBUG] Transferencia finalizada correctamente")
+        print("[DEBUG] --------------------------------------")
         udp_socket.close()

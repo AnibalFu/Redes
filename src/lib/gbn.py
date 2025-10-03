@@ -5,7 +5,7 @@ from typing import Optional
 
 from lib.config import RTO
 from lib.logger import Logger
-from lib.protocolo_amcgf import MTU, VER_GBN, VER_SW, BadChecksum, Datagrama, MsgType, Truncated, make_ack, make_bye, make_ok, make_req_download, make_req_upload
+from lib.protocolo_amcgf import FLAG_MF, MTU, VER_GBN, VER_SW, BadChecksum, Datagrama, MsgType, Truncated, make_ack, make_bye, make_ok, make_req_download, make_req_upload
 from lib.window import Window
 
 @dataclass  
@@ -45,8 +45,18 @@ class GoBackN:
                 return datagram
             
     ''' A USAR POR EL SENDER '''
-            
-    def send_data(self, datagrama: Datagrama, logger: Logger | None = None):
+
+    def send_data(self, datagrama: Datagrama, logger: Logger | None = None) -> None:
+        if self.window.can_send():
+            self.send_datagram(datagrama, logger)
+
+        else:
+            # Procesar ACKs de forma no bloqueante 
+            ack_received = self.receive_ack()
+            if ack_received:
+                print(f"[DEBUG] ACK recibido, ventana base ahora en: {self.window.base}")
+
+    def send_datagram(self, datagrama: Datagrama, logger: Logger | None = None):
         # Verificar timeout primero
         if self.timer is not None and (time.time() - self.timer) > self.rto:
             print("[DEBUG] Timeout - reenviando ventana completa")
