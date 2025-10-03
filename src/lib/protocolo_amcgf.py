@@ -1,5 +1,3 @@
-# amcgf_proto.py
-
 """
 File Transfer / Go-Back-N / Stop-and-Wait (AMCGF) Header
 
@@ -18,9 +16,10 @@ File Transfer / Go-Back-N / Stop-and-Wait (AMCGF) Header
    +---------------------------------------------------------------+
 """
 
+import struct
+
 from dataclasses import dataclass
 from enum import IntEnum
-import struct
 
 # Definicion de constantes y enum
 
@@ -47,12 +46,10 @@ FLAG_MF  = 0x4000
 # Convencion: ack == 0 => no hay ACK piggyback
 ACK_NONE = 0
 
-# Payload key
 PAYLOAD_DATA_KEY = "chunk" # deprecado
 PAYLOAD_FILENAME_KEY = "filename" # deprecado
 PAYLOAD_ERR_MSG_KEY = "message" # deprecado
-FILE_SIZE_KEY = "file_size"  # deprecado
-
+PAYLOAD_FILE_SIZE_KEY = "file_size"  # deprecado
 
 class MsgType(IntEnum):
     REQUEST_UPLOAD   = 0
@@ -63,7 +60,6 @@ class MsgType(IntEnum):
     ACK              = 5
     BYE              = 6 
 
-# Errores
 class ProtoError(Exception): ...
 class BadChecksum(ProtoError): ...
 class Truncated(ProtoError): ...
@@ -81,7 +77,7 @@ def inet_checksum(data: bytes) -> int:
     return (~s) & 0xFFFF
 
 @dataclass
-class Datagrama:
+class Datagram:
     ver: int                  # VER_SW o VER_GBN
     typ: MsgType              # Tipo de mensaje
     ack: int = 0              # Numero de ACK (piggyback o para MsgType.ACK)
@@ -135,7 +131,7 @@ class Datagrama:
         return header + self.payload
 
     @staticmethod
-    def decode(buf: bytes) -> "Datagrama":
+    def decode(buf: bytes) -> 'Datagram':
         # Verificar largo minimo de header
         if len(buf) < HDR_SIZE:
             raise Truncated(f"{len(buf)} < HDR_SIZE {HDR_SIZE}")
@@ -158,10 +154,11 @@ class Datagrama:
             ack,
             seq,
         )
+
         if inet_checksum(header_zero + payload) != ck:
             raise BadChecksum("checksum mismatch")
 
-        return Datagrama(
+        return Datagram(
             ver=ver,
             typ=MsgType(typ),
             ack=ack,
@@ -169,7 +166,6 @@ class Datagrama:
             payload=payload,
             flags=flags,
         )
-
 
     def __str__(self) -> str:
         # Traduccion de version a nombre
@@ -200,7 +196,7 @@ class Datagrama:
             preview_str = "(empty)"
 
         return (
-            f"Datagrama {{\n"
+            f"Datagram {{\n"
             f"  type={self.typ.name} ({int(self.typ)})\n"
             f"  ver={ver_name}\n"
             f"  flags=0x{self.flags:04X} {flags_str}\n"
@@ -211,11 +207,9 @@ class Datagrama:
             f"}}"
         )
 
-
-# Funciones auxiliares payload | encode y decode texto plano
 def _encode_value(v) -> str:
     if isinstance(v, bool):
-        return "true" if v else "false"
+        return 'true' if v else 'false'
     elif isinstance(v, (int, float, str)):
         return str(v)
     elif isinstance(v, bytes):
@@ -223,11 +217,11 @@ def _encode_value(v) -> str:
     else:
         raise ValueError(f"Unsupported type for encoding: {type(v)}")
 
-def _decode_value(k: str, v: str):
+def _decode_value(k: str, v: str) -> str | bool | int | float:
     if k == PAYLOAD_DATA_KEY:
         return v
-    elif v.lower() in ("true", "false"):
-        return v.lower() == "true"
+    elif v.lower() in ('true', 'false'):
+        return v.lower() == 'true'
     try:
         return int(v)
     except ValueError:
@@ -245,14 +239,13 @@ def payload_encode(d: dict) -> bytes:
         and isinstance(d[PAYLOAD_DATA_KEY], (bytes, bytearray, memoryview))
     ):
         v = bytes(d[PAYLOAD_DATA_KEY])
-        return PAYLOAD_DATA_KEY.encode("utf-8") + b"=" + v
+        return PAYLOAD_DATA_KEY.encode('utf-8') + b'=' + v
 
     # Caso general (texto): k=v por linea, UTF-8
     items = []
     for k, v in d.items():
-        items.append(f"{k}={_encode_value(v)}")
-    return "\n".join(items).encode("utf-8")
-
+        items.append(f'{k}={_encode_value(v)}')
+    return '\n'.join(items).encode('utf-8')
 
 def payload_decode(b: bytes) -> dict:
     out = {}
@@ -260,82 +253,52 @@ def payload_decode(b: bytes) -> dict:
         return out
 
     # Caso especial binario: "<KEY>=" + bytes crudos
-    prefix = (PAYLOAD_DATA_KEY + "=").encode("utf-8")
+    prefix = (PAYLOAD_DATA_KEY + '=').encode('utf-8')
     if b.startswith(prefix):
         out[PAYLOAD_DATA_KEY] = b[len(prefix):]
         return out
 
     # Caso general (texto): k=v por linea, UTF-8
-    for line in b.decode("utf-8", "strict").splitlines():
-        if not line or "=" not in line:
+    for line in b.decode('utf-8', 'strict').splitlines():
+        if not line or '=' not in line:
             continue
-        k, v = line.split("=", 1)
+        k, v = line.split('=', 1)
         out[k.strip()] = _decode_value(k.strip(), v.strip())
     return out
 
 # -------------------- API --------------------
 
-def make_req_upload(filename: str, ver: int, data_size: int) -> Datagrama:
-    return Datagrama(ver, MsgType.REQUEST_UPLOAD, payload=payload_encode({PAYLOAD_FILENAME_KEY: filename, FILE_SIZE_KEY: data_size}))
+def make_req_upload(filename: str, ver: int, data_size: int) -> Datagram:
+    """Crea un datagrama de solicitud de subida de archivo."""
 
-def make_req_download(filename: str, ver: int) -> Datagrama:
-    return Datagrama(ver, MsgType.REQUEST_DOWNLOAD, payload=payload_encode({PAYLOAD_FILENAME_KEY: filename}))
+    return Datagram(ver, MsgType.REQUEST_UPLOAD, payload=payload_encode({PAYLOAD_FILENAME_KEY: filename, PAYLOAD_FILE_SIZE_KEY: data_size}))
 
-# OK / ERR con piggyback opcional de ACK (ack != 0 => ACK valido y se encendera FLAG_ACK)
-def make_ok(extra: dict | None = None, ver: int = VER_SW, ack: int = ACK_NONE) -> Datagrama:
-    return Datagrama(ver, MsgType.OK, ack=ack, payload=payload_encode(extra or {}))
+def make_req_download(filename: str, ver: int) -> Datagram:
+    """Crea un datagrama de solicitud de descarga de archivo."""
 
-def make_err(msg: str, ver: int = VER_SW, ack: int = ACK_NONE) -> Datagrama:
-    return Datagrama(ver, MsgType.ERR, ack=ack, payload=payload_encode({PAYLOAD_ERR_MSG_KEY: msg}))
+    return Datagram(ver, MsgType.REQUEST_DOWNLOAD, payload=payload_encode({PAYLOAD_FILENAME_KEY: filename}))
 
-# DATA con SEQ obligatorio y ACK piggyback opcional
-def make_data(seq: int, chunk: bytes, ver: int, ack: int = ACK_NONE, mf: bool = False) -> Datagrama:
-    flags = FLAG_MF if mf else 0
-    return Datagrama(ver, MsgType.DATA, ack=ack, seq=seq, payload=chunk, flags=flags)
-
-# ACK puro
-def make_ack(acknum: int, ver: int) -> Datagrama:
-    return Datagrama(ver, MsgType.ACK, ack=acknum)
-
-def make_bye(ver: int) -> Datagrama:
-    return Datagrama(ver, MsgType.BYE)
-
-
-"""
-# Ejemplo de checksum [DEBUG]
-# print(inet_checksum(b"hello"))
-msg = b"ABCD"     # en ASCII: 41 42 43 44 hex
-# Palabras de 16 bits: 0x4142, 0x4344
-# Suma: 0x4142 + 0x4344 = 0x8476
-# Complemento a uno: ~0x8476 = 0x7B79
-print(hex(inet_checksum(msg)))  # '0x7b79'
-
-
-# DATA
-d = {"segmento": True, "data": b"hola"}
-enc = payload_encode(d)
-dec = payload_decode(enc)
-print(f"Bytes: {enc!r}")
-print(f"Hex: {enc.hex(' ', 1)}")
-print(f"Dec: {dec!r}")
-
-print("=======================================")
-a = b"holaaaaaaaaaaaaaaaaaaaaaa"
-for i in range(0, len(a), 3):
-    print(i)
-    print(a[i:i+3])
+def make_ok(extra: dict | None = None, ver: int = VER_SW, ack: int = ACK_NONE) -> Datagram:
+    """Crea un datagrama de OK, con campos extra opcionales en el payload."""
     
-d = make_ok(extra={"ready": True}, ver=VER_SW, ack=42)
-d = d.encode()
-d = Datagrama.decode(d)
-print(d)
+    return Datagram(ver, MsgType.OK, ack=ack, payload=payload_encode(extra or {}))
 
-# 2 fragmentos y un ultimo
-d1 = make_data(seq=0, chunk=b"A"*100, ver=VER_SW, mf=True)
-d2 = make_data(seq=1, chunk=b"B"*100, ver=VER_SW, mf=True, ack=42)
-d3 = make_data(seq=2, chunk=b"C"*60,  ver=VER_SW, mf=False)  # ultimo
+def make_err(msg: str, ver: int = VER_SW, ack: int = ACK_NONE) -> Datagram:
+    """Crea un datagrama de error con mensaje."""
+    
+    return Datagram(ver, MsgType.ERR, ack=ack, payload=payload_encode({PAYLOAD_ERR_MSG_KEY: msg}))
 
-for d in (d1, d2, d3):
-    dec = Datagrama.decode(d.encode())
-    print(dec.pretty_print())   # deberias ver [MF] en los primeros dos, y sin MF en el ultimo
-"""
+def make_data(seq: int, chunk: bytes, ver: int, ack: int = ACK_NONE, mf: bool = False) -> Datagram:
+    """Crea un datagrama de datos con numero de secuencia y payload."""
+    
+    return Datagram(ver, MsgType.DATA, ack=ack, seq=seq, payload=chunk, flags=FLAG_MF if mf else 0)
+
+def make_ack(acknum: int, ver: int) -> Datagram:
+    """Crea un datagrama de ACK con numero de ACK."""
+
+    return Datagram(ver, MsgType.ACK, ack=acknum)
+
+def make_bye(ver: int) -> Datagram:
+    """Crea un datagrama de BYE para finalizar la conexion."""
+    
+    return Datagram(ver, MsgType.BYE)

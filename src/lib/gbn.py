@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from socket import socket
 
 from lib.logger import Logger
-from src.lib.protocolo_amcgf import Datagrama
+from src.lib.protocolo_amcgf import Datagram
 
 @dataclass  
 class GoBackN:
@@ -10,7 +10,7 @@ class GoBackN:
         self.sock = sock
         self.client_addr = client_addr
             
-    def send_data(self, datagrama: Datagrama, logger: Logger | None):
+    def send_data(self, datagram: Datagram, logger: Logger | None):
         pass
         
     def receive_data(self):

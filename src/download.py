@@ -1,7 +1,7 @@
 from argparse import ArgumentParser, Namespace, RawDescriptionHelpFormatter
 
 from lib.client import DEFAULT_NAME, DEFAULT_SRC, Client
-from lib.fileHandler import FileHandler
+from lib.file_handler import FileHandler
 from lib.logger import Logger
 from lib.protocolo_amcgf import VER_GBN, VER_SW
 

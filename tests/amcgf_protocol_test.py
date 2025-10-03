@@ -13,12 +13,12 @@ def test_encode_decode_json():
         and decoded['binary'] == "b'Hallo, Welt!'"
 
 def test_encode_decode_datagram():
-    """Testing encode/decode de un Datagrama"""
+    """Testing encode/decode de un Datagram"""
     
-    datagram = Datagrama(ver=VER_SW, typ=1, ack=0, seq=0, payload=b'Hallo Welt!')
+    datagram = Datagram(ver=VER_SW, typ=1, ack=0, seq=0, payload=b'Hallo Welt!')
 
     encoded = datagram.encode()
-    decoded = Datagrama.decode(encoded)
+    decoded = Datagram.decode(encoded)
     
     assert decoded.ver == VER_SW \
         and decoded.typ == 1 \
@@ -29,13 +29,13 @@ def test_encode_decode_datagram():
 def test_exception_badchecksum():
     """Testing de excepción BadChecksum"""
     
-    datagram = Datagrama(ver=VER_SW, typ=5, seq=1, payload=b'Hello World!')
+    datagram = Datagram(ver=VER_SW, typ=5, seq=1, payload=b'Hello World!')
     
     hex = bytearray(datagram.encode())
     hex[-1] ^= 0xFF
     
     try:
-        Datagrama.decode(bytes(hex))
+        Datagram.decode(bytes(hex))
         assert False, 'Should have raised BadChecksum'
     except Exception as e:
         assert 'BadChecksum' in str(type(e).__name__)
@@ -43,11 +43,11 @@ def test_exception_badchecksum():
 def test_exception_truncated():
     """Testing de excepción Truncated"""
 
-    datagram = Datagrama(ver=VER_SW, typ=5, seq=2, payload=b'VM: VirtualBox')
+    datagram = Datagram(ver=VER_SW, typ=5, seq=2, payload=b'VM: VirtualBox')
     encoded = datagram.encode()
     
     try:
-        Datagrama.decode(encoded[:HDR_SIZE - 1])
+        Datagram.decode(encoded[:HDR_SIZE - 1])
         assert False, 'Should have raised Truncated'
     except Exception as e:
         assert 'Truncated' in str(type(e).__name__)
@@ -56,7 +56,7 @@ def test_exception_frametoobig():
     """Testing de excepción FrameTooBig"""
 
     try:
-        Datagrama(ver=VER_SW, typ=5, seq=0, payload=b'x' * (MSS + 1)).encode()
+        Datagram(ver=VER_SW, typ=5, seq=0, payload=b'x' * (MSS + 1)).encode()
         assert False, "Debería haber lanzado FrameTooBig"
     except Exception as e:
         assert 'FrameTooBig' in str(type(e).__name__)
@@ -66,19 +66,19 @@ def test_ack_flag_behavior():
     
     ack = make_ack(acknum=123, ver=VER_SW)
     encoded = ack.encode()
-    datagram = Datagrama.decode(encoded)
+    datagram = Datagram.decode(encoded)
 
     assert datagram.typ == MsgType.ACK and datagram.flags & FLAG_ACK and datagram.ack == 123
 
     ok = make_ok(ver=VER_SW, ack=123)
     encoded = ok.encode()
-    datagram = Datagrama.decode(encoded)
+    datagram = Datagram.decode(encoded)
 
     assert datagram.typ == MsgType.OK and datagram.flags & FLAG_ACK and datagram.ack == 123
 
     data = make_data(seq=123, chunk=b'Hello World!', ver=VER_SW)
     encoded = data.encode()
-    datagram = Datagrama.decode(encoded)
+    datagram = Datagram.decode(encoded)
 
     assert datagram.typ == MsgType.DATA and (datagram.flags & FLAG_ACK) == 0
 
@@ -107,12 +107,12 @@ def test_mf_flag_behavior():
 
     datagram = make_data(seq=10, chunk=b'x' * 10, ver=VER_SW, mf=True)
     encoded = datagram.encode()
-    decoded = Datagrama.decode(encoded)
+    decoded = Datagram.decode(encoded)
 
     assert decoded.typ == MsgType.DATA and decoded.flags & FLAG_MF
 
     datagram = make_data(seq=10, chunk=b'x' * 10, ver=VER_SW, mf=False)
     encoded = datagram.encode()
-    decoded = Datagrama.decode(encoded)
+    decoded = Datagram.decode(encoded)
 
     assert decoded.typ == MsgType.DATA and (decoded.flags & FLAG_MF) == 0

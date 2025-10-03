@@ -3,7 +3,7 @@ import time
 import os
 
 class Logger:
-    def __init__(self, verbose=False, output_dir="logs"):
+    def __init__(self, verbose: bool = False, output_dir: str = 'logs'):
         self.verbose = verbose
 
         # Datos para RTT
@@ -38,8 +38,7 @@ class Logger:
             #self.ax_tp.set_title("Throughput en tiempo real")
             #plt.tight_layout()
 
-
-    def log(self, message, quiet=False):
+    def log(self, message: str, quiet: bool = False):
         if self.verbose or quiet:
             print(message)
 
@@ -50,13 +49,13 @@ class Logger:
         self.retransmissions = 0
         self.log("Transferencia iniciada")
 
-    def add_bytes(self, nbytes, retransmission=False):
+    def add_bytes(self, nbytes: int, retransmission: bool = False):
         """Registrar bytes enviados"""
         self.bytes_sent += nbytes
         if retransmission:
             self.retransmissions += 1
 
-    def log_rtt(self, rtt):
+    def log_rtt(self, rtt: float):
         """Registrar un valor de RTT"""
         now = time.time()
         elapsed = now - self.start_time if self.start_time else 0
@@ -67,9 +66,9 @@ class Logger:
             self.x_data.append(elapsed)
             self.y_data.append(rtt)
 
-
-    def log_final(self, filename="metrics.txt"):
+    def log_final(self, filename: str = 'metrics.txt'):
         """Guardar métricas y mostrar resultados finales"""
+        
         duration = time.time() - self.start_time if self.start_time else 0
         throughput = (self.bytes_sent / 1024) / duration if duration > 0 else 0
         rtt_avg = (sum(self.rtt_list)/len(self.rtt_list))*1000 if self.rtt_list else 0  # ms
@@ -97,5 +96,3 @@ class Logger:
             #self.ax_rtt.autoscale_view()
             #plt.draw()
             #plt.pause(10)
-
-    

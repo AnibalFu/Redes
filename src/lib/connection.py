@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from logging import FileHandler, Logger
 from socket import socket, AF_INET, SOCK_DGRAM
 
-from lib.protocolo_amcgf import MTU, PAYLOAD_ERR_MSG_KEY, VER_SW, Datagrama, MsgType, make_ok
+from lib.protocolo_amcgf import MTU, PAYLOAD_ERR_MSG_KEY, Datagram, MsgType, make_ok
 from lib.sw import StopAndWait
 from lib.config import *
 
@@ -18,14 +18,14 @@ class Connection:
 
     def _make_udp_socket(self, timeout: float | None = None, bind_addr: tuple[str, int] | None = None) -> socket:
         """Create a UDP socket with optional timeout and optional bind address."""
-        udp_socket = socket(AF_INET, SOCK_DGRAM)
+        sock = socket(AF_INET, SOCK_DGRAM)
         
         if bind_addr:
-            udp_socket.bind(bind_addr)
+            sock.bind(bind_addr)
         if timeout:
-            udp_socket.settimeout(timeout)
+            sock.settimeout(timeout)
         
-        return udp_socket
+        return sock
 
     def _send_control_and_prepare_sw(self, req_bytes: bytes, timeout: float = TIMEOUT_MAX, rto: float = RTO) -> tuple[StopAndWait | None, tuple[str, int] | None, socket | None]:
         """
@@ -34,32 +34,31 @@ class Connection:
         the peer address, and the underlying control socket. Returns (None, None, None) on ERR.
         """
 
-        udp_socket = self._make_udp_socket(timeout=timeout)
-        udp_socket.sendto(req_bytes, (self.host, self.port))
+        sock = self._make_udp_socket(timeout=timeout)
+        sock.sendto(req_bytes, (self.host, self.port))
 
-        bytes, addr = udp_socket.recvfrom(MTU)
+        bytes, addr = sock.recvfrom(MTU)
         
         try:
-            ok = Datagrama.decode(bytes)
+            ok = Datagram.decode(bytes)
         except Exception:
             raise
         
         if ok.typ == MsgType.ERR:
-            print(f"[SERVER ERROR] {ok.payload.decode().replace(f'{PAYLOAD_ERR_MSG_KEY}=', '')}")
-            udp_socket.close()
+            print(f"[ERROR] {ok.payload.decode().replace(f'{PAYLOAD_ERR_MSG_KEY}=', '')}")
+            sock.close()
             return None, None, None
 
-        sw = StopAndWait(udp_socket=udp_socket, peer=addr, rto=rto)
+        sw = StopAndWait(sock=sock, peer=addr, rto=rto)
         
-        return sw, addr, udp_socket
+        return sw, addr, sock
 
-
-    def _send_ok_and_prepare_sw(self, sock: socket, peer_addr: tuple[str, int], rto: float = RTO) -> StopAndWait:
+    def _send_ok_and_prepare_sw(self, sock: socket, peer_addr: tuple[str, int], rto: float = RTO, rcv = None) -> StopAndWait:
         """
         Server-side helper. Sends OK to the peer and returns a configured StopAndWait instance.
         """
 
-        ok = make_ok(ver=VER_SW)
+        ok = make_ok()
         
         try:
             encoded = ok.encode()
@@ -68,4 +67,4 @@ class Connection:
         
         sock.sendto(encoded, peer_addr)
         
-        return StopAndWait(udp_socket=sock, peer=peer_addr, rto=rto)
+        return StopAndWait(sock=sock, peer=peer_addr, rto=rto, recv_fn=rcv)
