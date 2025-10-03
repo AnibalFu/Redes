@@ -1,10 +1,9 @@
 from abc import ABC, abstractmethod
 from socket import socket
 from typing import Optional, Tuple
-from lib.gbn import GoBackN
+
 from lib.logger import Logger
 from lib.protocolo_amcgf import VER_GBN, VER_SW, Datagrama
-from lib.sw import StopAndWait
 
 
 class Protocol(ABC):
@@ -87,9 +86,11 @@ class Protocol(ABC):
 def create_protocol(protocol_type: int, sock: socket, client_addr: Tuple[str, int], rto: float = 1.0) -> Protocol:
 
     if protocol_type == VER_SW:
+        from lib.gbn import StopAndWait
         return StopAndWait(udp_socket=sock, peer=client_addr, rto=rto)
     
     elif protocol_type == VER_GBN:
+        from lib.gbn import GoBackN
         return GoBackN(sock=sock, client_addr=client_addr, rto=rto)
     
     else:
