@@ -175,7 +175,7 @@ class StopAndWait(Protocol):
     
     def send_bye_with_retry(self, max_retries: int = 8, quiet_time: float = 0.2) -> bool:
         self.udp_socket.settimeout(self.rto)
-        
+        print(self.rto)
         bye = make_bye(ver=VER_SW)
 
         try:

@@ -50,14 +50,16 @@ class Client(Connection):
         # Envio de datos
         with open(self.src, 'rb') as file:
             while True:
-                chunk = file.read(MSS)
-                # chunk = file.read(2)  # para probar mas facil
+                #chunk = file.read(MSS)
+                chunk = file.read(8)  # para probar mas facil
                 if not chunk:
                     break
 
                 more_fragments = file.peek(1) != b''
-                
+                print(f"[DEBUG] more_fragments: {more_fragments}")
+
                 datagram = make_data(seq=seq_number, chunk=chunk, ver=self.protocol, mf=more_fragments)
+                print(f"[DEBUG] seq: {seq_number}, flag more_fragments: {datagram.flags & FLAG_MF}")
                 protocol_instance.send_data(datagram, self.logger)
 
                 self.logger.add_bytes(len(chunk))

@@ -86,7 +86,7 @@ class Protocol(ABC):
 def create_protocol(protocol_type: int, sock: socket, client_addr: Tuple[str, int], rto: float = 1.0) -> Protocol:
 
     if protocol_type == VER_SW:
-        from lib.gbn import StopAndWait
+        from lib.sw import StopAndWait
         return StopAndWait(udp_socket=sock, peer=client_addr, rto=rto)
     
     elif protocol_type == VER_GBN:

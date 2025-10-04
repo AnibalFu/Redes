@@ -91,7 +91,6 @@ class Server(Connection):
                 continue
             
             if datagram.typ == MsgType.DATA:
-                print(f"[DEBUG] Recibido DATA con seq {datagram.seq} esperado {seq_number}")
                 
                 if datagram.seq == seq_number:
                     self.fileHandler.save_datagram(filename=filename, datagram=datagram)
