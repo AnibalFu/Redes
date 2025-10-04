@@ -62,10 +62,7 @@ class GoBackN(Protocol):
 
     def send_data(self, datagram: Datagram, logger: Logger | None = None) -> bool:
         # Verificar timeout
-        print(f"[DEBUG] Timer: {self.timer}, RTO: {self.rto}")
-        
         if self.timer is not None and (time.time() - self.timer) > self.rto:
-            print("[DEBUG] Timeout - reenviando ventana completa")
             # Reenviar todos los paquetes en la ventana
             for i in range(self.window.base, self.window.next_seq_num):
                 packet_data = self.window.get_packet(i)
@@ -96,7 +93,6 @@ class GoBackN(Protocol):
             self._send_datagram(datagram=datagram, logger=logger)
             return True
         else:
-            print("[DEBUG] Ventana llena, no se puede enviar")
             return False
 
     def receive_data(self) -> Optional[Datagram]:
@@ -133,8 +129,6 @@ class GoBackN(Protocol):
             return None
 
         if datagram.typ == MsgType.ACK:
-            print(f"[DEBUG] Recibido ACK para seq: {datagram.ack}")
-                
             # ACK acumulativo
             if datagram.ack >= self.window.base:
                 self.window.mark_received(datagram.ack)
@@ -155,9 +149,6 @@ class GoBackN(Protocol):
             return
           
         self.sock.sendto(encoded, self.addr)
-        print(f"[DEBUG] Enviado paquete con seq: {datagram.seq}")
-
-        print(f"[DEBUG] Window base: {self.window.base}, datagrama seq: {datagram.seq}")
         if self.window.base == datagram.seq:
             self.timer = time.time()
             
@@ -176,8 +167,6 @@ class GoBackN(Protocol):
                 continue
 
             if datagram.typ == MsgType.ACK:
-                print(f"[DEBUG] Recibido ACK para seq: {datagram.ack}")
-                
                 if datagram.ack >= self.window.base:
                     self.window.mark_received(datagram.ack)
                     
@@ -229,7 +218,6 @@ class GoBackN(Protocol):
                 continue
             
             if datagram.typ == MsgType.BYE:
-                print("[DEBUG] Recibido BYE de peer, enviando OK MODO LINGER")
                 self.send_ok()
                 
                 t_end = time.time() + linger_factor * self.rto
@@ -244,7 +232,6 @@ class GoBackN(Protocol):
                         continue
                     
                     if datagram.typ == MsgType.BYE:
-                        print("[DEBUG] REENVIO OK")
                         self.send_ok()
                         t_end = time.time() + linger_factor * self.rto
                 

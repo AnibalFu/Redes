@@ -58,8 +58,6 @@ class Connection:
             sock.close()
             return None, None, None
 
-        print(f'Calling with {recv_fn}')
-
         return create_protocol(type=ver, sock=sock, addr=addr, rto=rto), addr, sock
 
     def _send_ok(

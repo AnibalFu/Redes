@@ -19,8 +19,6 @@ class Window:
             self.base += 1
     
     def can_send(self) -> bool:
-        print(f"[DEBUG] Puedo enviar Ventana: base={self.base}, next_seq_num={self.next_seq_num}, size={self.size}")
-        print(f"[DEBUG] {self.next_seq_num < self.base + self.size}")
         return self.next_seq_num < self.base + self.size
 
     def mark_sent(self, datagram: Datagram) -> int | None:
@@ -33,7 +31,6 @@ class Window:
         if acknum >= self.base:
             self.base = acknum + 1
         self.next_seq_num = self.base
-        print(f"[DEBUG] Ventana movida. Base: {self.base}, Next_seq_num: {self.next_seq_num}")
 
     def is_at_base(self) -> bool:
         return self.base == self.next_seq_num
