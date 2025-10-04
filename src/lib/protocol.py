@@ -43,7 +43,7 @@ class Protocol(ABC):
     # ---------------------------------
     
     @abstractmethod
-    def send_data(self, datagrama: Datagrama, logger: Optional[Logger] = None) -> None:
+    def send_data(self, datagrama: Datagrama, logger: Optional[Logger] = None) -> bool:
         pass
     
     @abstractmethod

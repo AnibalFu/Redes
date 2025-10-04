@@ -48,7 +48,7 @@ class StopAndWait(Protocol):
                 return datagram
 
     # Se lo mando a peer
-    def send_data(self, datagrama: Datagrama, logger: Optional[Logger] = None) -> None:
+    def send_data(self, datagrama: Datagrama, logger: Optional[Logger] = None) -> bool:
         self.udp_socket.settimeout(self.rto)
         
         try:
@@ -87,6 +87,8 @@ class StopAndWait(Protocol):
                 
                 elif time.time() - t0 > self.rto:
                     break
+
+        return True
 
     def receive_data(self) -> Optional[Datagrama]:
         self.udp_socket.settimeout(self.rto)
@@ -175,7 +177,7 @@ class StopAndWait(Protocol):
     
     def send_bye_with_retry(self, max_retries: int = 8, quiet_time: float = 0.2) -> bool:
         self.udp_socket.settimeout(self.rto)
-        print(self.rto)
+        
         bye = make_bye(ver=VER_SW)
 
         try:

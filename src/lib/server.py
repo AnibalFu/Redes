@@ -114,7 +114,9 @@ class Server(Connection):
         protocol = self._send_ok_and_prepare_protocol(ver, udp_socket, client_addr, rto=RTO)
 
         for seq_number, (payload, mf) in enumerate(self.fileHandler.get_file_chunks(filename, CHUNK_SIZE)):
-            protocol.send_data(datagrama=make_data(seq=seq_number, chunk=payload, ver=VER_GBN, mf=mf))
-            
+            sent = False
+            while not sent:
+                sent = protocol.send_data(datagrama=make_data(seq=seq_number, chunk=payload, ver=VER_GBN, mf=mf))
+
         protocol.send_bye_with_retry(max_retries=8, quiet_time=0.2)
         udp_socket.close()
