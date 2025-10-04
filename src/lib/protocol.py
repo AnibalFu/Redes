@@ -6,6 +6,8 @@ from typing import Optional, Callable
 from lib.config import RTO, RETRY_MAX
 from lib.logger import Logger
 from lib.protocolo_amcgf import MTU, VER_GBN, VER_SW, BadChecksum, Datagram, Truncated
+from lib.sw import StopAndWait
+from lib.gbn import GoBackN
 
 @dataclass
 class Protocol(ABC):
@@ -29,7 +31,9 @@ class Protocol(ABC):
         self.sock.settimeout(timeout)
         
         try:
+            print("Recibiendo...")
             data, _ = self.sock.recvfrom(MTU)
+            print("Recibido")
             return data
         except SocketTimeout:
             return None
@@ -54,21 +58,21 @@ class Protocol(ABC):
     # MÉTODOS DE CONTROL DE CONEXIÓN
     # --------------------------------
     
-    @abstractmethod
-    def send_upload(self, filename: str) -> None:
-        pass
+    # @abstractmethod
+    # def send_upload(self, filename: str) -> None:
+    #     pass
     
-    @abstractmethod
-    def send_download(self, filename: str) -> None:
-        pass
+    # @abstractmethod
+    # def send_download(self, filename: str) -> None:
+    #     pass
     
-    @abstractmethod
-    def receive_upload(self) -> Optional[Datagram]:
-        pass
+    # @abstractmethod
+    # def receive_upload(self) -> Optional[Datagram]:
+    #     pass
     
-    @abstractmethod
-    def receive_download(self) -> Optional[Datagram]:
-        pass
+    # @abstractmethod
+    # def receive_download(self) -> Optional[Datagram]:
+    #     pass
     
     # ---------------------------------
     # MÉTODOS DE TRANSFERENCIA DE DATOS
@@ -126,11 +130,9 @@ def create_protocol(
         recv_fn: Optional[Callable[[float], bytes | None]] | None = None) -> Protocol:
     
     if type == VER_SW:
-        from lib.sw import StopAndWait
         return StopAndWait(sock=sock, addr=addr, rto=rto, recv_fn=recv_fn)
 
     elif type == VER_GBN:
-        from lib.gbn import GoBackN
         return GoBackN(sock=sock, addr=addr, rto=rto, recv_fn=recv_fn)
 
     else:

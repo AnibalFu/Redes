@@ -31,30 +31,30 @@ class GoBackN(Protocol):
     # MÉTODOS DE CONTROL DE CONEXIÓN
     # --------------------------------
 
-    def send_upload(self, filename: str) -> None:
-        req = make_req_upload(filename=filename, ver=VER_GBN)
-        self.send_data(req)
+    # def send_upload(self, filename: str) -> None:
+    #     req = make_req_upload(filename=filename, ver=VER_GBN)
+    #     self.send_data(req)
         
-    def send_download(self, filename: str) -> None:
-        req = make_req_download(filename=filename, ver=VER_GBN)
-        self.send_data(req)
+    # def send_download(self, filename: str) -> None:
+    #     req = make_req_download(filename=filename, ver=VER_GBN)
+    #     self.send_data(req)
 
-    def receive_upload(self) -> Optional[Datagram]:
-        while True:
-            datagram = self.receive_data()
-            if not datagram:
-                continue
+    # def receive_upload(self) -> Optional[Datagram]:
+    #     while True:
+    #         datagram = self.receive_data()
+    #         if not datagram:
+    #             continue
             
-            if datagram.typ == MsgType.REQUEST_UPLOAD:
-                return datagram
+    #         if datagram.typ == MsgType.REQUEST_UPLOAD:
+    #             return datagram
 
-    def receive_download(self) -> Optional[Datagram]:
-        while True:
-            datagram = self.receive_data()
-            if not datagram:
-                continue
-            if datagram.typ == MsgType.REQUEST_DOWNLOAD:
-                return datagram
+    # def receive_download(self) -> Optional[Datagram]:
+    #     while True:
+    #         datagram = self.receive_data()
+    #         if not datagram:
+    #             continue
+    #         if datagram.typ == MsgType.REQUEST_DOWNLOAD:
+    #             return datagram
             
     # ---------------------------------
     # MÉTODOS DE TRANSFERENCIA DE DATOS

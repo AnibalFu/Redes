@@ -21,80 +21,43 @@ class StopAndWait(Protocol):
 
         super().__init__(rto=rto, sock=sock, addr=addr, recv_fn=recv_fn)
 
-    # --------------------------------
-    # MÉTODOS DE CONTROL DE CONEXIÓN
-    # --------------------------------
-
-    def send_upload(self, filename: str):
-        req = make_req_upload(filename=filename, ver=VER_SW)
-        self.send_data(req)
-
-    def send_download(self, filename: str):
-        req = make_req_download(filename=filename, ver=VER_SW)
-        self.send_data(req)
-
-    def receive_upload(self) -> Optional[Datagram]:
-        """Espera un REQUEST_UPLOAD y lo devuelve decodificado."""
-
-        while True:
-            datagram = self.receive_data()
-            if not datagram:
-                continue
-            
-            if datagram.typ == MsgType.REQUEST_UPLOAD:
-                return datagram
-    
-    def receive_download(self) -> Optional[Datagram]:
-        """Espera un REQUEST_DOWNLOAD y lo devuelve decodificado."""
-
-        while True:
-            datagram = self.receive_data()
-            if not datagram:
-                continue
-            
-            if datagram.typ == MsgType.REQUEST_DOWNLOAD:
-                return datagram
-
     # ---------------------------------
     # MÉTODOS DE TRANSFERENCIA DE DATOS
     # ---------------------------------
 
     def send_data(self, datagram: Datagram, logger: Logger | None = None) -> bool:
+        """Envia un datagrama con retries hasta que se recibe un ACK o se agota el timeout."""
         expected_ack = datagram.seq + 1
         
         encoded = self._safe_encode(datagram)
         if not encoded:
-            return 0
-
-        while True:
-            self.sock.sendto(encoded, self.addr)
-            
-            t0 = time.time()
-            while True:
-                raw = self.recv_fn(self.rto)   
-                if raw is None:
-                    break
-                
-                datagram = self._safe_decode(raw)
-                if datagram is None:
-                    continue
-                
-                if datagram.typ != MsgType.ACK:
-                    continue
-                
-                if datagram.ack == expected_ack:
-                    if logger:
-                        rtt = time.time() - t0  
-                        logger.log_rtt(rtt * 1000) 
-                
-                    return True
-                
-                elif datagram.ack < expected_ack:
-                    continue
-                
-                elif time.time() - t0 > self.rto:
-                    break
+            return False
         
+        self.sock.sendto(encoded, self.addr)
+        
+        t0 = time.time()
+        while True:
+            raw = self.recv_fn(self.rto)
+            if raw is None:
+                break
+            
+            try:
+                datagram = Datagram.decode(raw)
+            except (Truncated, BadChecksum):
+                continue
+            
+            if datagram.typ == MsgType.ACK and datagram.ack == expected_ack:
+                if logger:
+                    rtt = time.time() - t0
+                    logger.log_rtt(rtt)
+                
+                return True
+            
+            elif time.time() - t0 > self.rto:
+                break
+        
+        return False
+
     def receive_data(self) -> Optional[Datagram]:
         """Recibe un datagrama decodificado usando la función recv_fn."""
 
@@ -113,6 +76,7 @@ class StopAndWait(Protocol):
 
         self.sock.sendto(encoded, self.addr)
 
+    # NO SE USA 
     def receive_ack(self, expected_ack: int) -> bool:
         raw_bytes = self.recv_fn(self.rto)
         if not raw_bytes:

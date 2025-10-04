@@ -45,12 +45,9 @@ class Client(Connection):
             self.logger.log_error(f"[ERROR] No se pudo crear el datagrama de solicitud: {e}")
             return
         
-        
-        # ACA DEBERIA IR LOS RETRYS
         proto, _, sock = self._send_control(ver=self.protocol, req_bytes=encoded, timeout=RTO, logger=self.logger)
         if not proto:
             return
-        # TERMINA ACA LOS RETRYS
         
         seq_number = 0
         with open(self.src, 'rb') as file:
@@ -63,6 +60,7 @@ class Client(Connection):
 
                 datagram = make_data(seq=seq_number, chunk=chunk, ver=self.protocol, mf=more_fragments)
 
+                # Send data con retries implementado de cada protocolo (polimorfismo)
                 while not proto.send_data(datagram=datagram, logger=self.logger):
                     pass
 

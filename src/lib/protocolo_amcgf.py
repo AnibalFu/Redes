@@ -29,9 +29,12 @@ from enum import IntEnum
 HDR_FMT  = "!BBHHHII"  # B=1, B=1, H=2, H=2, H=2, I=4, I=4  => 16 bytes
 HDR_SIZE = struct.calcsize(HDR_FMT)
 
+MSS = 1400
+MTU = HDR_SIZE + MSS
+
+# Version del RDT (Stop-and-Wait o Go-Back-N)
 VER_SW  = 1  # Stop-and-Wait
 VER_GBN = 2  # Go-Back-N
-
 
 # Se usa el bit mas alto (0x8000) como "ACK flag" (0x8000 = 1000 0000 0000 0000)
 FLAG_ACK = 0x8000

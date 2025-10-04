@@ -34,7 +34,7 @@ class Server(Connection):
             try:
                 encoded = make_err("Error: Error al decodificar datagrama").encode()
             except Exception:
-                raise
+                pass
 
             sock.sendto(encoded, addr)
             return
@@ -50,11 +50,10 @@ class Server(Connection):
             if file_size > MAX_FILE_SIZE:
                 try:
                     encoded = make_err(f"Tamaño máximo de archivo permitido de {MAX_FILE_SIZE} bytes").encode()
+                    sock.sendto(encoded, addr)
+                    return
                 except Exception:
-                    raise
-                
-                sock.sendto(encoded, addr)
-                return
+                    return
             
             self._handle_upload(sock=sock, addr=addr, filename=filename, queue=queue)
 
@@ -66,11 +65,10 @@ class Server(Connection):
             if not self.file_handler.is_filename_used(filename):
                 try:
                     encoded = make_err(f"Error: Archivo '{filename}' no existe").encode()
+                    sock.sendto(encoded, addr)
+                    return
                 except Exception:
-                    raise
-                
-                sock.sendto(encoded, addr)
-                return
+                    return
             
             self._handle_download(sock=sock, addr=addr, filename=filename, queue=queue)
     
@@ -92,6 +90,11 @@ class Server(Connection):
                 
                 if not (datagram.flags & FLAG_MF):
                     break
+                
+            # Si el cliente envía un nuevo REQUEST_UPLOAD, se le envía un OK
+            elif datagram.typ == MsgType.REQUEST_UPLOAD:
+                print("[INFO] Solicitud de subida recibida repetida")
+                self._retry_send_ok(addr)
     
         proto.await_bye_and_linger(linger_factor=3, quiet_time=0.2)
 
@@ -108,6 +111,14 @@ class Server(Connection):
         proto.send_bye_with_retry()
 
         del self.queues[addr]    
+
+    def _retry_send_ok(self, addr: tuple[str, int]) -> None:
+        try:
+            encoded = make_ok().encode()
+            self.sock.sendto(encoded, addr)
+        except Exception:
+            pass
+
 
     def run(self) -> NoReturn:
         sock = socket(AF_INET, SOCK_DGRAM)

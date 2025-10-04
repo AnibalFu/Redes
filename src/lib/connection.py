@@ -45,32 +45,52 @@ class Connection:
 
         sock = self._make_udp_socket(timeout=timeout)
         
-        # LOOP CON RETRYS
-        exito = False
-        for _ in range(RETRY_MAX):
+        # Handshake: termina cuando recibo OK, con reintentos maximos
+        addr = None
+        ok_datagram = None
+        for i in range(1, RETRY_MAX + 2):
             try:
+                sock.settimeout(timeout * i)   
                 sock.sendto(req_bytes, (self.host, self.port))
-                bytes, addr = sock.recvfrom(MTU)
-                exito = True
-                break
-            except socket.timeout:
+                data, addr = sock.recvfrom(MTU)
+                # Intentar decodificar
+                try:
+                    d = Datagram.decode(data)
+                except Exception:
+                    # paquete invalido, reintentar
+                    continue
+
+                if d.typ == MsgType.OK:
+                    ok_datagram = d
+                    break
+                
+                if d.typ == MsgType.ERR:
+                    if logger:
+                        try:
+                            msg = d.payload.decode().replace(f"{PAYLOAD_ERR_MSG_KEY}=", "")
+                        except Exception:
+                            msg = "Unknown error"
+                        logger.log_error(f"[ERROR] {msg}")
+                    sock.close()
+                    return None, None, None
+                
+                # Otro tipo inesperado, reintentar
+                continue
+            except Exception:
+                # timeout u otro error, reintentar hasta agotar RETRY_MAX
+                continue
+        
+        # Si no hubo OK en los reintentos, fallar
+        if ok_datagram is None or addr is None:
+            if logger:
+                logger.log_error("[ERROR] Handshake no completado: no se recibio OK")
+            try:
+                sock.close()
+            except Exception:
                 pass
-        
-        # Loggear el error
-        if not exito:
-            logger.log_error("[ERROR] No se pudo completar la solicitud")
-            return None, None, None
-        
-        try:
-            ok = Datagram.decode(bytes)
-        except Exception:
-            raise
-        
-        if ok.typ == MsgType.ERR:
-            logger.log_error(f"{ok.payload.decode().replace(f'{PAYLOAD_ERR_MSG_KEY}=', '')}")
-            sock.close()
             return None, None, None
 
+        # Exito: devolver el protocolo configurado
         return create_protocol(type=ver, sock=sock, addr=addr, rto=rto), addr, sock
 
     def _send_ok(
@@ -82,7 +102,7 @@ class Connection:
             recv_fn: Optional[Callable[[float], bytes | None]] | None = None
             ) -> Protocol:
         """
-        Server-side helper. Sends OK to the peer and returns a configured StopAndWait instance.
+        Server-side helper. Sends OK to the peer and returns a configured StopAndWait or GoBackN instance.
         """
 
         try:
