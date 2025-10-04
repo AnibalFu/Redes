@@ -45,7 +45,7 @@ class Client(Connection):
             self.logger.log_error(f"[ERROR] No se pudo crear el datagrama de solicitud: {e}")
             return
 
-        proto, _, sock = self._send_control(ver=self.protocol, req_bytes=encoded, timeout=TIMEOUT_MAX + 0.1)
+        proto, _, sock = self._send_control(ver=self.protocol, req_bytes=encoded, timeout=TIMEOUT_MAX + 0.1, logger=self.logger)
         if not proto:
             return
         
@@ -83,7 +83,7 @@ class Client(Connection):
             self.logger.log_error(f"[ERROR] No se pudo crear el datagrama de solicitud: {e}")
             return
 
-        proto, _, sock = self._send_control(ver=self.protocol, req_bytes=encoded, timeout=TIMEOUT_MAX + 0.1)
+        proto, _, sock = self._send_control(ver=self.protocol, req_bytes=encoded, timeout=TIMEOUT_MAX + 0.1, logger=self.logger)
         if not proto:
             return
 
