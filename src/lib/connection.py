@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from lib.file_handler import FileHandler
 from socket import socket, AF_INET, SOCK_DGRAM
 
+from lib.logger import Logger
 from lib.protocolo_amcgf import MTU, PAYLOAD_ERR_MSG_KEY, Datagram, MsgType, make_ok
 from lib.sw import StopAndWait
 from lib.config import *
@@ -27,7 +28,7 @@ class Connection:
         
         return sock
 
-    def _send_control_and_prepare_sw(self, req_bytes: bytes, timeout: float = TIMEOUT_MAX, rto: float = RTO) -> tuple[StopAndWait | None, tuple[str, int] | None, socket | None]:
+    def _send_control_and_prepare_sw(self, req_bytes: bytes, timeout: float = TIMEOUT_MAX, rto: float = RTO, logger: Logger | None = None ) -> tuple[StopAndWait | None, tuple[str, int] | None, socket | None]:
         """
         Client-side helper.
         Sends a control request (already encoded), waits for response, handles ERR, and returns a configured StopAndWait instance,
@@ -45,7 +46,7 @@ class Connection:
             raise
         
         if ok.typ == MsgType.ERR:
-            print(f"[ERROR] {ok.payload.decode().replace(f'{PAYLOAD_ERR_MSG_KEY}=', '')}")
+            logger.log_error(f"{ok.payload.decode().replace(f'{PAYLOAD_ERR_MSG_KEY}=', '')}")
             sock.close()
             return None, None, None
 

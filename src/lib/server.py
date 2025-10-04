@@ -69,7 +69,7 @@ class Server(Connection):
 
             if file_size > MAX_FILE_SIZE:
                 try:
-                    encoded = make_err(f"Error: Tamaño máximo de archivo permitido de {MAX_FILE_SIZE} bytes").encode()
+                    encoded = make_err(f"Tamaño máximo de archivo permitido de {MAX_FILE_SIZE} bytes").encode()
                 except Exception:
                     raise
                 
