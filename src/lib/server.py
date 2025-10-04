@@ -1,12 +1,14 @@
 import threading
-from dataclasses import dataclass
-from socket import socket
-from typing import Tuple
-from lib.fileHandler import FileHandler
-from lib.connection import Connection
+
+from queue import Empty, Queue
+from socket import AF_INET, SOCK_DGRAM, socket
+from dataclasses import dataclass, field
+from typing import NoReturn
+
+from lib.protocol import *
 from lib.config import *
-from lib.protocol import Protocol
 from lib.protocolo_amcgf import *
+from lib.connection import Connection
         
 # A futuro restar key de data
 CHUNK_SIZE = MSS
@@ -14,109 +16,116 @@ DEFAULT_STORAGE_PATH = './storage_data'
 
 @dataclass
 class Server(Connection):
-    fileHandler: FileHandler = None
+    queues: dict = field(default_factory=dict)
 
-    def run(self):
-        """
-        Ejecuta el servidor principal
+    @staticmethod
+    def _queue_recv_fn(timeout: float, queue: Queue) -> bytes | None:
+        try:
+            return queue.get(timeout=timeout)
+        except Empty:
+            return None
 
-        Por cada cliente se crea un thread para manejar la transferencia
-        """
-        server_socket = self._make_udp_socket()
-        server_socket.bind((self.host, self.port))
-        print(f"Servidor escuchando en {self.host}:{self.port}")
-
-        while True:
-            packet, client_addr = server_socket.recvfrom(MTU)
-            if len(packet) < HDR_SIZE:
-                print("[DEBUG] Mensaje de control recibido:", packet)
-                continue
-
-            try:
-                datagram = Datagrama.decode(packet)
-            except Exception as e:
-                err = make_err("Error al decodificar datagrama")
-                server_socket.sendto(err.encode(), client_addr)
-                print(f"[DEBUG] Error al decodificar datagrama: {e}")
-                continue
+    def _process_client(self, addr: tuple[str, int], sock: socket, queue: Queue) -> None:
+        data = queue.get(block=True)
         
-            # Tipos de mensajes aceptados de cliente
-            if datagram.typ == MsgType.REQUEST_UPLOAD:
-                payload = payload_decode(datagram.payload)
-                protocol = datagram.ver
-                print(f"[DEBUG] REQUEST_UPLOAD de {client_addr} payload: {payload}")
-                
-                filename = payload[PAYLOAD_FILENAME_KEY]
-                file_size = payload[FILE_SIZE_KEY]
+        try:
+            datagram = Datagram.decode(buf=data)
+        except Exception:
+            try:
+                encoded = make_err("Error: Error al decodificar datagrama").encode()
+            except Exception:
+                raise
 
-                if file_size > MAX_FILE_SIZE:
-                    err = make_err(f"El tamaño del archivo excede el máximo permitido de {MAX_FILE_SIZE} bytes")
-                    server_socket.sendto(err.encode(), client_addr)
-                    print(f"[DEBUG] El tamaño del archivo excede el máximo permitido de {MAX_FILE_SIZE} bytes")
-                    continue
-                
-                udp_socket = self._make_udp_socket(bind_addr=('', 0))
-                
-                threading.Thread(target=self.handle_upload, args=(udp_socket, client_addr, filename, protocol), daemon=True).start()
+            sock.sendto(encoded, addr)
+            return
+            
+        self.protocol = datagram.ver
 
-            elif datagram.typ == MsgType.REQUEST_DOWNLOAD:
-                payload = payload_decode(datagram.payload)
-                protocol = datagram.ver
-                print(f"[DEBUG] REQUEST_DOWNLOAD de {client_addr} payload: {payload}")
+        if datagram.typ == MsgType.REQUEST_UPLOAD:
+            payload = payload_decode(datagram.payload)
+            
+            filename = payload[PAYLOAD_FILENAME_KEY]
+            file_size = payload[PAYLOAD_FILE_SIZE_KEY]
+
+            if file_size > MAX_FILE_SIZE:
+                try:
+                    encoded = make_err(f"Tamaño máximo de archivo permitido de {MAX_FILE_SIZE} bytes").encode()
+                except Exception:
+                    raise
                 
-                filename = payload[PAYLOAD_FILENAME_KEY]
+                sock.sendto(encoded, addr)
+                return
+            
+            self._handle_upload(sock=sock, addr=addr, filename=filename, queue=queue)
 
-                if not self.fileHandler.is_filename_used(filename):
-                    err = make_err(f"El archivo '{filename}' no existe en el servidor")
-                    server_socket.sendto(err.encode(), client_addr)
-                    print(f"[DEBUG] El archivo '{filename}' no existe en el servidor")
-                    continue
+        elif datagram.typ == MsgType.REQUEST_DOWNLOAD:
+            payload = payload_decode(datagram.payload)
+            
+            filename = payload[PAYLOAD_FILENAME_KEY]
 
-                print(f"[DEBUG] Filename: {filename}")
+            if not self.file_handler.is_filename_used(filename):
+                try:
+                    encoded = make_err(f"Error: Archivo '{filename}' no existe").encode()
+                except Exception:
+                    raise
                 
-                udp_socket = self._make_udp_socket(bind_addr=('', 0))
-                
-                threading.Thread(target=self.handle_download, args=(udp_socket, client_addr, filename, protocol), daemon=True).start()
+                sock.sendto(encoded, addr)
+                return
+            
+            self._handle_download(sock=sock, addr=addr, filename=filename, queue=queue)
+    
+    def _handle_upload(self, sock: socket, addr: tuple[str, int], filename: str, queue: Queue) -> None:
+        proto = self._send_ok(ver=self.protocol, sock=sock, addr=addr, recv_fn=lambda t: Server._queue_recv_fn(t, queue))
 
-    def handle_upload(self, udp_socket: socket, client_addr: Tuple[str, int], filename: str, ver: int):
-        # Parte del handshake
-        protocol = self._send_ok_and_prepare_protocol(ver, udp_socket, client_addr, rto=RTO)
-        print(f"[DEBUG] Handle upload en puerto {udp_socket.getsockname()[1]} para {client_addr}")
-
-        seq_number = 0
+        expected_seq = 0
         while True:
-
-            datagram = protocol.receive_data()
+            datagram = proto.receive_data()
             if not datagram:
                 continue
-            
+                        
             if datagram.typ == MsgType.DATA:
+                if datagram.seq == expected_seq:
+                    self.file_handler.save_datagram(filename=filename, datagram=datagram)
+                    expected_seq += 1
                 
-                if datagram.seq == seq_number:
-                    self.fileHandler.save_datagram(filename=filename, datagram=datagram)
-                    seq_number += 1
-                    protocol.send_ack(acknum=datagram.seq)
-                
-                else:
-
-                    # Paquete fuera de orden, reenviar ACK del último paquete correcto
-                    if seq_number > 0:
-                        protocol.send_ack(acknum=seq_number - 1)
+                proto.send_ack(acknum=expected_seq)
                 
                 if not (datagram.flags & FLAG_MF):
-                    print("[DEBUG] LAST FRAGMENT RECEIVED")
                     break
     
-        protocol.await_bye_and_linger(linger_factor=3, quiet_time=0.2)
-        udp_socket.close()
-        
-    def handle_download(self, udp_socket: socket, client_addr: tuple[str, int], filename: str, ver: int):
-        protocol = self._send_ok_and_prepare_protocol(ver, udp_socket, client_addr, rto=RTO)
+        proto.await_bye_and_linger(linger_factor=3, quiet_time=0.2)
 
-        for seq_number, (payload, mf) in enumerate(self.fileHandler.get_file_chunks(filename, CHUNK_SIZE)):
-            sent = False
-            while not sent:
-                sent = protocol.send_data(datagrama=make_data(seq=seq_number, chunk=payload, ver=VER_GBN, mf=mf))
+        del self.queues[addr]
 
-        protocol.send_bye_with_retry(max_retries=8, quiet_time=0.2)
-        udp_socket.close()
+    def _handle_download(self, sock: socket, addr: tuple[str, int], filename: str, queue: Queue) -> None:
+        proto = self._send_ok(ver=self.protocol, sock=sock, addr=addr, recv_fn=lambda t: self._queue_recv_fn(t, queue))
+
+        chunks = self.file_handler.get_file_chunks(filename, CHUNK_SIZE)
+        for seq_number, (payload, mf) in enumerate(chunks):
+            while not proto.send_data(datagram=make_data(seq=seq_number, chunk=payload, ver=self.protocol, mf=mf)):
+                pass
+
+        proto.send_bye_with_retry()
+
+        del self.queues[addr]    
+
+    def run(self) -> NoReturn:
+        sock = socket(AF_INET, SOCK_DGRAM)
+        sock.bind((self.host, self.port))
+
+        print(f"Server listening at {self.host}:{self.port}")
+
+        while True:
+            data, addr = sock.recvfrom(MTU)
+            if len(data) < HDR_SIZE:
+                continue 
+
+            if addr not in self.queues:
+                queue = Queue()
+                self.queues[addr] = queue
+
+                threading.Thread(target=self._process_client, args=(addr, sock, queue), daemon=True).start()
+            else:
+                queue = self.queues[addr]
+
+            queue.put(data)

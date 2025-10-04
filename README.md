@@ -12,7 +12,7 @@
 
 ## Integrantes
 
-- [Infanti Franciso](https://github.com/FranInfanti)
+- [Infanti Francisco](https://github.com/FranInfanti)
 
 - [Anibal Fu](https://github.com/anibalfu)
 

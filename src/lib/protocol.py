@@ -1,23 +1,55 @@
 from abc import ABC, abstractmethod
-from socket import socket
-from typing import Optional, Tuple
+from dataclasses import dataclass
+from socket import socket, timeout as SocketTimeout
+from typing import Optional, Callable
 
+from lib.config import RTO
 from lib.logger import Logger
-from lib.protocolo_amcgf import VER_GBN, VER_SW, Datagrama
+from lib.protocolo_amcgf import MTU, VER_GBN, VER_SW, BadChecksum, Datagram, Truncated
 
-
+@dataclass
 class Protocol(ABC):
     """
     Interfaz abstracta para protocolos de recuperación de errores.
 
     """
-    
-    def __init__(self, sock: socket, client_addr: Tuple[str, int], rto: float):
 
-        self.udp_socket = sock
-        self.client_addr = client_addr
-        self.rto = rto
+    rto: float = RTO
+    sock: socket | None = None
+    addr: tuple[str, int] | None = None
+    recv_fn: Optional[Callable[[float], bytes | None]] | None = None
     
+    def __post_init__(self):
+        if not self.recv_fn:
+            self.recv_fn = self._default_recv
+        
+    def _default_recv(self, timeout: float = RTO) -> Optional[bytes]:
+        """Recibe datos directamente desde el socket (modo cliente)."""
+
+        self.sock.settimeout(timeout)
+        
+        try:
+            data, _ = self.sock.recvfrom(MTU)
+            return data
+        except SocketTimeout:
+            return None
+
+    def _safe_encode(self, datagrama: Datagram) -> bytes | None:
+        try:
+            encoded = datagrama.encode()
+        except Exception:
+            return None
+        
+        return encoded
+    
+    def _safe_decode(self, data: bytes) -> Optional[Datagram] | None:
+        try:
+            datagram = Datagram.decode(data)
+        except (Truncated, BadChecksum):
+            return None
+        
+        return datagram
+
     # --------------------------------
     # MÉTODOS DE CONTROL DE CONEXIÓN
     # --------------------------------
@@ -31,11 +63,11 @@ class Protocol(ABC):
         pass
     
     @abstractmethod
-    def receive_upload(self) -> Optional[Datagrama]:
+    def receive_upload(self) -> Optional[Datagram]:
         pass
     
     @abstractmethod
-    def receive_download(self) -> Optional[Datagrama]:
+    def receive_download(self) -> Optional[Datagram]:
         pass
     
     # ---------------------------------
@@ -43,11 +75,11 @@ class Protocol(ABC):
     # ---------------------------------
     
     @abstractmethod
-    def send_data(self, datagrama: Datagrama, logger: Optional[Logger] = None) -> bool:
+    def send_data(self, datagram: Datagram, logger: Optional[Logger] = None) -> bool:
         pass
     
     @abstractmethod
-    def receive_data(self) -> Optional[Datagrama]:
+    def receive_data(self) -> Optional[Datagram]:
         pass
     
     @abstractmethod
@@ -55,7 +87,7 @@ class Protocol(ABC):
         pass
     
     @abstractmethod
-    def receive_ack(self) -> Optional[Datagrama]:
+    def receive_ack(self) -> Optional[Datagram]:
         pass
     
     # -----------------------------
@@ -78,44 +110,50 @@ class Protocol(ABC):
     def receive_ok(self) -> bool:
         pass
 
+    @abstractmethod
+    def send_bye(self) -> None:
+        pass
 
 # -------------------------------
 # FACTORY PATTERN PARA PROTOCOLOS
 # -------------------------------
 
-def create_protocol(protocol_type: int, sock: socket, client_addr: Tuple[str, int], rto: float = 1.0) -> Protocol:
-
-    if protocol_type == VER_SW:
+def create_protocol(
+        type: int,
+        sock: socket,
+        addr: tuple[str, int],
+        rto: float = RTO,
+        recv_fn: Optional[Callable[[float], bytes | None]] | None = None) -> Protocol:
+    
+    if type == VER_SW:
         from lib.sw import StopAndWait
-        return StopAndWait(udp_socket=sock, peer=client_addr, rto=rto)
-    
-    elif protocol_type == VER_GBN:
-        from lib.gbn import GoBackN
-        return GoBackN(sock=sock, client_addr=client_addr, rto=rto)
-    
-    else:
-        raise ValueError(f"Tipo de protocolo no válido: {protocol_type}. Use 'SW' o 'GBN'")
+        return StopAndWait(sock=sock, addr=addr, rto=rto, recv_fn=recv_fn)
 
+    elif type == VER_GBN:
+        from lib.gbn import GoBackN
+        return GoBackN(sock=sock, addr=addr, rto=rto, recv_fn=recv_fn)
+
+    else:
+        raise ValueError(f"Tipo de protocolo no válido: {type}. Use 'SW' o 'GBN'")
 
 # --------------------------------
 # UTILS
 # --------------------------------
 
+@dataclass
 class ProtocolMetrics:
+    packets_sent: int = 0
+    packets_received: int = 0
+    retransmissions: int = 0
+    timeouts: int = 0
+    start_time: Optional[float] = None
+    end_time: Optional[float] = None
     
-    def __init__(self):
-        self.packets_sent = 0
-        self.packets_received = 0
-        self.retransmissions = 0
-        self.timeouts = 0
-        self.start_time = None
-        self.end_time = None
-    
-    def start_transfer(self):
+    def start_transfer(self) -> None:
         import time
         self.start_time = time.time()
     
-    def end_transfer(self):
+    def end_transfer(self) -> None:
         import time
         self.end_time = time.time()
     

@@ -1,36 +1,41 @@
+from socket import socket
 import time
 
 from dataclasses import dataclass
-from socket import socket, timeout as SocketTimeout
-from typing import Tuple, Optional
-from lib.logger import Logger
+from typing import Callable, Optional
+
 from lib.protocol import Protocol
-from lib.protocolo_amcgf import *
-import time
 from lib.config import *
+from lib.logger import Logger
+from lib.protocolo_amcgf import *
 
 @dataclass
 class StopAndWait(Protocol):
-    udp_socket: socket # Mio
-    peer: Tuple[str, int] # Suyo
-    rto: float = RTO # Retardo de timeout
-    
-    def __init__(self, udp_socket: socket, peer: Tuple[str, int], rto: float = RTO):
-        super().__init__(udp_socket, peer, rto)
-        self.udp_socket = udp_socket
-        self.peer = peer
-        self.client_addr = peer  # Alias para compatibilidad con Protocol
-        self.rto = rto
-    
-    def send_upload(self, filename: str) -> None:
+
+    def __init__(
+            self,
+            sock: socket,
+            addr: tuple[str, int],
+            rto: float = RTO,
+            recv_fn: Optional[Callable[[float], bytes | None]] | None = None) -> None:
+
+        super().__init__(rto=rto, sock=sock, addr=addr, recv_fn=recv_fn)
+
+    # --------------------------------
+    # MÉTODOS DE CONTROL DE CONEXIÓN
+    # --------------------------------
+
+    def send_upload(self, filename: str):
         req = make_req_upload(filename=filename, ver=VER_SW)
         self.send_data(req)
-        
-    def send_download(self, filename: str) -> None:
+
+    def send_download(self, filename: str):
         req = make_req_download(filename=filename, ver=VER_SW)
         self.send_data(req)
 
-    def receive_upload(self) -> Optional[Datagrama]:
+    def receive_upload(self) -> Optional[Datagram]:
+        """Espera un REQUEST_UPLOAD y lo devuelve decodificado."""
+
         while True:
             datagram = self.receive_data()
             if not datagram:
@@ -38,243 +43,190 @@ class StopAndWait(Protocol):
             
             if datagram.typ == MsgType.REQUEST_UPLOAD:
                 return datagram
+    
+    def receive_download(self) -> Optional[Datagram]:
+        """Espera un REQUEST_DOWNLOAD y lo devuelve decodificado."""
 
-    def receive_download(self) -> Optional[Datagrama]:
         while True:
             datagram = self.receive_data()
             if not datagram:
                 continue
+            
             if datagram.typ == MsgType.REQUEST_DOWNLOAD:
                 return datagram
 
-    # Se lo mando a peer
-    def send_data(self, datagrama: Datagrama, logger: Optional[Logger] = None) -> bool:
-        self.udp_socket.settimeout(self.rto)
-        
-        try:
-            encoded = datagrama.encode()
-        except Exception:
-            raise
+    # ---------------------------------
+    # MÉTODOS DE TRANSFERENCIA DE DATOS
+    # ---------------------------------
 
-        expected_ack = datagrama.seq + 1
-          
-        while True:       
-            self.udp_socket.sendto(encoded, self.peer)
-            t0 = time.time()
+    def send_data(self, datagram: Datagram, logger: Logger | None = None) -> bool:
+        expected_ack = datagram.seq + 1
+        
+        encoded = self._safe_encode(datagram)
+        if not encoded:
+            return 0
+
+        while True:
+            self.sock.sendto(encoded, self.addr)
             
+            t0 = time.time()
             while True:
-                try:
-                    bytes, _ = self.udp_socket.recvfrom(MTU)
-                except SocketTimeout:
+                raw = self.recv_fn(self.rto)   
+                if raw is None:
                     break
                 
-                try:
-                    datagram = Datagrama.decode(bytes)
-                except (Truncated, BadChecksum):
-                    break
+                datagram = self._safe_decode(raw)
+                if datagram is None:
+                    continue
                 
                 if datagram.typ != MsgType.ACK:
                     continue
                 
-                elif datagram.ack == expected_ack:
+                if datagram.ack == expected_ack:
                     if logger:
                         rtt = time.time() - t0  
                         logger.log_rtt(rtt * 1000) 
-                    return  # Void return para cumplir interfaz
+                
+                    return True
                 
                 elif datagram.ack < expected_ack:
                     continue
                 
                 elif time.time() - t0 > self.rto:
                     break
+        
+    def receive_data(self) -> Optional[Datagram]:
+        """Recibe un datagrama decodificado usando la función recv_fn."""
 
-        return True
-
-    def receive_data(self) -> Optional[Datagrama]:
-        self.udp_socket.settimeout(self.rto)
-
-        try:
-            bytes, _ = self.udp_socket.recvfrom(MTU)
-        except SocketTimeout:
+        raw_bytes = self.recv_fn(self.rto)
+        
+        if not raw_bytes:
             return None
         
-        try:
-            datagram = Datagrama.decode(bytes)
-        except (Truncated, BadChecksum):
-            return None
-        
-        return datagram
+        return self._safe_decode(raw_bytes)
 
-    # Se lo mando a peer
     def send_ack(self, acknum: int) -> None:
-        ack = make_ack(acknum=acknum, ver=VER_SW)
         try:
-            encoded = ack.encode()
+            encoded = make_ack(acknum=acknum, ver=VER_SW).encode()
         except Exception:
             raise
-        
-        self.udp_socket.sendto(encoded, self.peer)
 
-    # Recibo de peer
-    def receive_ack(self) -> Optional[Datagrama]:
-        """Interfaz compatible con Protocol - recibe cualquier ACK"""
-        self.udp_socket.settimeout(self.rto)
-        
-        try:
-            bytes, _ = self.udp_socket.recvfrom(MTU)
-        except SocketTimeout:
-            return None
-        
-        try:
-            datagram = Datagrama.decode(bytes)
-            if datagram.typ == MsgType.ACK:
-                return datagram
-        except (Truncated, BadChecksum):
-            pass
-        
-        return None
-    
-    def _receive_expected_ack(self, expected_ack: int) -> bool:
-        self.udp_socket.settimeout(self.rto)
-        
-        try:
-            bytes, _ = self.udp_socket.recvfrom(MTU)
-        except SocketTimeout:
+        self.sock.sendto(encoded, self.addr)
+
+    def receive_ack(self, expected_ack: int) -> bool:
+        raw_bytes = self.recv_fn(self.rto)
+        if not raw_bytes:
             return False
+        
         try:
-            datagram = Datagrama.decode(bytes)
+            datagram = Datagram.decode(raw_bytes)
         except (Truncated, BadChecksum):
             return False
         
         return datagram.typ == MsgType.ACK and datagram.ack == expected_ack
 
-    # Se lo mando a peer
-    def send_bye(self) -> None:
-        bye = make_bye(ver=VER_SW)
+    # -----------------------------
+    # MÉTODOS DE CIERRE DE CONEXIÓN
+    # -----------------------------
 
-        try:
-            encoded = bye.encode()
-        except Exception:
-            raise
-
-        self.udp_socket.sendto(encoded, self.peer)
-        
-    # Recibo de peer
-    def receive_bye(self) -> bool:
-        self.udp_socket.settimeout(self.rto)
-
-        try:
-            bytes, _ = self.udp_socket.recvfrom(MTU)
-        except SocketTimeout:
-            return False
-        
-        try:
-            datagram = Datagrama.decode(bytes)
-        except (Truncated, BadChecksum):
-            return False
-        
-        return datagram.typ == MsgType.BYE
-    
     def send_bye_with_retry(self, max_retries: int = 8, quiet_time: float = 0.2) -> bool:
-        self.udp_socket.settimeout(self.rto)
-        
-        bye = make_bye(ver=VER_SW)
-
-        try:
-            encoded = bye.encode()
-        except Exception:
-            raise
+        """Envía BYE y espera un OK. Funciona tanto en server (cola) como en cliente (socket)."""
 
         for _ in range(max_retries):
-            self.udp_socket.sendto(encoded, self.peer)
-            
-            try:
-                bytes, _ = self.udp_socket.recvfrom(MTU)
-            except SocketTimeout:
+            encoded = self._safe_encode(make_bye(ver=VER_SW))
+            if not encoded:
                 continue
             
-            try:
-                datagram = Datagrama.decode(bytes)
-            except (Truncated, BadChecksum):
+            self.sock.sendto(encoded, self.addr)
+
+            raw_bytes = self.recv_fn(self.rto)
+            if not raw_bytes:
                 continue
-            
-            # Si recibo OK modela el LINGER (espero a que el peer cierre)
+
+            datagram = self._safe_decode(raw_bytes)
+            if datagram is None:
+                continue
+
             if datagram.typ == MsgType.OK:
                 t_end = time.time() + quiet_time
-                self.udp_socket.settimeout(quiet_time)
-                
                 while time.time() < t_end:
-                    try:
-                        self.udp_socket.recvfrom(MTU)
-                    except SocketTimeout:
+                    raw = self.recv_fn(quiet_time)
+                    if raw is None:
                         break
-                    
+                
+                    datagram = self._safe_decode(raw)
+                    if datagram and datagram.typ == MsgType.OK:
+                        # ignorar reenvíos de OK
+                        continue
+                
                 return True
-            
+
         return False
 
     def await_bye_and_linger(self, linger_factor: int = 2, quiet_time: float = 0.2) -> None:
-        self.udp_socket.settimeout(self.rto)
-
+        """Espera un BYE del peer y responde con OK, manejando linger.
+        Funciona tanto en server (cola) como en cliente (socket)."""
+        
         while True:
-            try:
-                bytes, _ = self.udp_socket.recvfrom(MTU)
-            except SocketTimeout:
+            raw = self.recv_fn(self.rto)
+            if raw is None:
                 continue
-            
-            try:
-                datagram = Datagrama.decode(bytes)
-            except (Truncated, BadChecksum):
-                continue
-            
-            # Si recibo BYE modela el LINGER (espero a que el peer cierre)
-            if datagram.typ == MsgType.BYE:
-                print("[DEBUG] Recibido BYE de peer, enviando OK MODO LINGER")
-                self.send_ok()
-                
-                t_end = time.time() + linger_factor * self.rto
-                self.udp_socket.settimeout(quiet_time)
-                
-                # LINGER
-                while time.time() < t_end:
-                    try:
-                        bytes, _ = self.udp_socket.recvfrom(MTU)
-                    except SocketTimeout:
-                        continue
-                    
-                    try:
-                        datagram = Datagrama.decode(bytes)
-                    except (Truncated, BadChecksum):
-                        continue
-                    
-                    if datagram.typ == MsgType.BYE:
-                        print("[DEBUG] REENVIO OK")
-                        self.send_ok()
-                        t_end = time.time() + linger_factor * self.rto
-                
-                return
-            
-    def send_ok(self) -> None:
-        ok = make_ok(ver=VER_SW)
 
+            datagram = self._safe_decode(raw)
+            if datagram is None:
+                continue
+
+            if datagram.typ == MsgType.BYE:
+                encoded = self._safe_encode(make_ok(ver=VER_SW))
+                if not encoded:
+                    continue
+                
+                self.sock.sendto(encoded, self.addr)
+
+                t_end = time.time() + linger_factor * self.rto
+
+                while time.time() < t_end:
+                    raw = self.recv_fn(quiet_time)
+                    if raw is None:
+                        continue
+
+                    datagram = self._safe_decode(raw)
+                    if datagram is None:
+                        continue
+
+                    if datagram.typ == MsgType.BYE:
+                        encoded = self._safe_encode(make_ok(ver=VER_SW))
+                        if not encoded:
+                            continue
+                        
+                        self.sock.sendto(encoded, self.addr)
+                        # resetear linger
+                        t_end = time.time() + linger_factor * self.rto
+                return
+
+    def send_ok(self) -> None:
         try:
-            encoded = ok.encode()
+            encoded = make_ok(ver=VER_SW).encode()
         except Exception:
             raise
 
-        self.udp_socket.sendto(encoded, self.peer)
+        self.sock.sendto(encoded, self.addr)
 
     def receive_ok(self) -> bool:
-        self.udp_socket.settimeout(self.rto)
-        
-        try:
-            bytes, _ = self.udp_socket.recvfrom(MTU)
-        except SocketTimeout:
+        raw_bytes = self.recv_fn(self.rto)
+        if not raw_bytes:
             return False
         
-        try:
-            datagram = Datagrama.decode(bytes)
-        except (Truncated, BadChecksum):
+        datagram = self._safe_decode(raw_bytes)
+        if not datagram:
             return False
-        
+                
         return datagram.typ == MsgType.OK
+    
+    def send_bye(self) -> None:
+        try:
+            encoded = make_bye(ver=VER_SW).encode()
+        except Exception:
+            raise
+
+        self.sock.sendto(encoded, self.addr)        
