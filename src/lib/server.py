@@ -1,13 +1,14 @@
 import threading
 
-from typing import Tuple
 from queue import Empty, Queue
 from socket import AF_INET, SOCK_DGRAM, socket
 from dataclasses import dataclass, field
+from typing import NoReturn
 
-from lib.connection import Connection
+from lib.protocol import *
 from lib.config import *
 from lib.protocolo_amcgf import *
+from lib.connection import Connection
         
 # A futuro restar key de data
 CHUNK_SIZE = MSS
@@ -24,28 +25,7 @@ class Server(Connection):
         except Empty:
             return None
 
-    def run(self):
-        sock = socket(AF_INET, SOCK_DGRAM)
-        sock.bind((self.host, self.port))
-
-        print(f"Server listening at {self.host}:{self.port}")
-
-        while True:
-            data, addr = sock.recvfrom(MTU)
-            if len(data) < HDR_SIZE:
-                continue 
-
-            if addr not in self.queues:
-                queue = Queue()
-                self.queues[addr] = queue
-
-                threading.Thread(target=self.process_client, args=(addr, sock, queue), daemon=True).start()
-            else:
-                queue = self.queues[addr]
-
-            queue.put(data)
-
-    def process_client(self, addr: tuple[str, int], sock: socket, queue: Queue):
+    def _process_client(self, addr: tuple[str, int], sock: socket, queue: Queue) -> None:
         data = queue.get(block=True)
         
         try:
@@ -76,7 +56,7 @@ class Server(Connection):
                 sock.sendto(encoded, addr)
                 return
             
-            self.handle_upload(sock=sock, addr=addr, filename=filename, queue=queue)
+            self._handle_upload(sock=sock, addr=addr, filename=filename, queue=queue)
 
         elif datagram.typ == MsgType.REQUEST_DOWNLOAD:
             payload = payload_decode(datagram.payload)
@@ -92,42 +72,60 @@ class Server(Connection):
                 sock.sendto(encoded, addr)
                 return
             
-            self.handle_download(sock=sock, addr=addr, filename=filename, queue=queue)
+            self._handle_download(sock=sock, addr=addr, filename=filename, queue=queue)
     
-    def handle_upload(self, sock: socket, addr: Tuple[str, int], filename: str, queue: Queue):
-        sw = self._send_ok_and_prepare_sw(sock=sock, peer_addr=addr, rcv=lambda t: Server._queue_recv_fn(t, queue))
+    def _handle_upload(self, sock: socket, addr: tuple[str, int], filename: str, queue: Queue) -> None:
+        proto = self._send_ok(ver=self.protocol, sock=sock, addr=addr, recv_fn=lambda t: Server._queue_recv_fn(t, queue))
 
-        seq_number = 0
+        expected_seq = 0
         while True:
-            datagram = sw.receive_data()
-            
+            datagram = proto.receive_data()
             if not datagram:
                 continue
                         
             if datagram.typ == MsgType.DATA:
-                print(f"[DEBUG] - Receive data with sequence_number={datagram.seq}, expecting={seq_number}")
-                
-                if datagram.seq == seq_number:
+                if datagram.seq == expected_seq:
                     self.file_handler.save_datagram(filename=filename, datagram=datagram)
-                    seq_number += 1
-
-                sw.send_ack(acknum=seq_number)
+                    expected_seq += 1
+                
+                proto.send_ack(acknum=expected_seq)
                 
                 if not (datagram.flags & FLAG_MF):
                     break
+    
+        proto.await_bye_and_linger(linger_factor=3, quiet_time=0.2)
 
-        sw.await_bye_and_linger(linger_factor=3, quiet_time=0.2)
-        
         del self.queues[addr]
 
-    def handle_download(self, sock: socket, addr: tuple[str, int], filename: str, queue: Queue):
-        sw = self._send_ok_and_prepare_sw(sock=sock, peer_addr=addr, rcv=lambda t: self._queue_recv_fn(t, queue))
+    def _handle_download(self, sock: socket, addr: tuple[str, int], filename: str, queue: Queue) -> None:
+        proto = self._send_ok(ver=self.protocol, sock=sock, addr=addr, recv_fn=lambda t: self._queue_recv_fn(t, queue))
 
         chunks = self.file_handler.get_file_chunks(filename, CHUNK_SIZE)
         for seq_number, (payload, mf) in enumerate(chunks):
-            sw.send_data(datagrama=make_data(seq=seq_number, chunk=payload, ver=self.protocol, mf=mf))
+            while not proto.send_data(datagram=make_data(seq=seq_number, chunk=payload, ver=self.protocol, mf=mf)):
+                pass
 
-        sw.send_bye_with_retry(retries=8, quiet_time=0.2)
+        proto.send_bye_with_retry()
 
-        del self.queues[addr]
-    
+        del self.queues[addr]    
+
+    def run(self) -> NoReturn:
+        sock = socket(AF_INET, SOCK_DGRAM)
+        sock.bind((self.host, self.port))
+
+        print(f"Server listening at {self.host}:{self.port}")
+
+        while True:
+            data, addr = sock.recvfrom(MTU)
+            if len(data) < HDR_SIZE:
+                continue 
+
+            if addr not in self.queues:
+                queue = Queue()
+                self.queues[addr] = queue
+
+                threading.Thread(target=self._process_client, args=(addr, sock, queue), daemon=True).start()
+            else:
+                queue = self.queues[addr]
+
+            queue.put(data)

@@ -1,62 +1,75 @@
+from socket import socket
 import time
 
 from dataclasses import dataclass
-from socket import socket, timeout as SocketTimeout
-from typing import Callable, Tuple, Optional
+from typing import Callable, Optional
 
+from lib.protocol import Protocol
+from lib.config import *
 from lib.logger import Logger
 from lib.protocolo_amcgf import *
-from lib.config import *
 
 @dataclass
-class StopAndWait:
-    rto: float = RTO
-    sock: socket | None = None
-    peer: Tuple[str, int] | None = None
-    recv_fn: Optional[Callable[[float], bytes | None]] | None = None
+class StopAndWait(Protocol):
 
-    def __post_init__(self):
-        if not self.recv_fn:
-            self.recv_fn = self._default_recv
+    def __init__(
+            self,
+            sock: socket,
+            addr: tuple[str, int],
+            rto: float = RTO,
+            recv_fn: Optional[Callable[[float], bytes | None]] | None = None) -> None:
+
+        super().__init__(rto=rto, sock=sock, addr=addr, recv_fn=recv_fn)
+
+    # --------------------------------
+    # MÉTODOS DE CONTROL DE CONEXIÓN
+    # --------------------------------
+
+    def send_upload(self, filename: str):
+        req = make_req_upload(filename=filename, ver=VER_SW)
+        self.send_data(req)
+
+    def send_download(self, filename: str):
+        req = make_req_download(filename=filename, ver=VER_SW)
+        self.send_data(req)
+
+    def receive_upload(self) -> Optional[Datagram]:
+        """Espera un REQUEST_UPLOAD y lo devuelve decodificado."""
+
+        while True:
+            datagram = self.receive_data()
+            if not datagram:
+                continue
+            
+            if datagram.typ == MsgType.REQUEST_UPLOAD:
+                return datagram
     
-    def _default_recv(self, timeout: float = RTO) -> Optional[bytes]:
-        """Recibe datos directamente desde el socket (modo cliente)."""
+    def receive_download(self) -> Optional[Datagram]:
+        """Espera un REQUEST_DOWNLOAD y lo devuelve decodificado."""
 
-        self.sock.settimeout(timeout)
-        
-        try:
-            data, _ = self.sock.recvfrom(MTU)
-            return data
-        except SocketTimeout:
-            return None
+        while True:
+            datagram = self.receive_data()
+            if not datagram:
+                continue
+            
+            if datagram.typ == MsgType.REQUEST_DOWNLOAD:
+                return datagram
 
-    def _safe_encode(self, datagrama: Datagram) -> bytes | None:
-        try:
-            encoded = datagrama.encode()
-        except Exception:
-            return None
-        
-        return encoded
-    
-    def _safe_decode(self, data: bytes) -> Optional[Datagram] | None:
-        try:
-            datagram = Datagram.decode(data)
-        except (Truncated, BadChecksum):
-            return None
-        
-        return datagram
+    # ---------------------------------
+    # MÉTODOS DE TRANSFERENCIA DE DATOS
+    # ---------------------------------
 
-    def send_data(self, datagrama: Datagram, logger: Logger | None = None) -> int:
-        expected_ack = datagrama.seq + 1
+    def send_data(self, datagram: Datagram, logger: Logger | None = None) -> bool:
+        expected_ack = datagram.seq + 1
         
-        encoded = self._safe_encode(datagrama)
+        encoded = self._safe_encode(datagram)
         if not encoded:
             return 0
 
-        while True:       
-            self.sock.sendto(encoded, self.peer)
-            t0 = time.time()
+        while True:
+            self.sock.sendto(encoded, self.addr)
             
+            t0 = time.time()
             while True:
                 raw = self.recv_fn(self.rto)   
                 if raw is None:
@@ -74,14 +87,14 @@ class StopAndWait:
                         rtt = time.time() - t0  
                         logger.log_rtt(rtt * 1000) 
                 
-                    return len(encoded)
+                    return True
                 
                 elif datagram.ack < expected_ack:
                     continue
                 
                 elif time.time() - t0 > self.rto:
                     break
-
+        
     def receive_data(self) -> Optional[Datagram]:
         """Recibe un datagrama decodificado usando la función recv_fn."""
 
@@ -97,43 +110,34 @@ class StopAndWait:
             encoded = make_ack(acknum=acknum, ver=VER_SW).encode()
         except Exception:
             raise
-        
-        self.sock.sendto(encoded, self.peer)
+
+        self.sock.sendto(encoded, self.addr)
 
     def receive_ack(self, expected_ack: int) -> bool:
-        self.sock.settimeout(self.rto)
-        
-        try:
-            bytes, _ = self.sock.recvfrom(MTU)
-        except SocketTimeout:
+        raw_bytes = self.recv_fn(self.rto)
+        if not raw_bytes:
             return False
         
         try:
-            datagram = Datagram.decode(bytes)
+            datagram = Datagram.decode(raw_bytes)
         except (Truncated, BadChecksum):
             return False
         
         return datagram.typ == MsgType.ACK and datagram.ack == expected_ack
 
-    def send_bye(self) -> None:
-        bye = make_bye(ver=VER_SW)
+    # -----------------------------
+    # MÉTODOS DE CIERRE DE CONEXIÓN
+    # -----------------------------
 
-        try:
-            encoded = bye.encode()
-        except Exception:
-            raise
-
-        self.sock.sendto(encoded, self.peer)
-        
-    def send_bye_with_retry(self, retries: int = 8, quiet_time: float = 0.2) -> bool:
+    def send_bye_with_retry(self, max_retries: int = 8, quiet_time: float = 0.2) -> bool:
         """Envía BYE y espera un OK. Funciona tanto en server (cola) como en cliente (socket)."""
 
-        for _ in range(retries):
+        for _ in range(max_retries):
             encoded = self._safe_encode(make_bye(ver=VER_SW))
             if not encoded:
                 continue
             
-            self.sock.sendto(encoded, self.peer)
+            self.sock.sendto(encoded, self.addr)
 
             raw_bytes = self.recv_fn(self.rto)
             if not raw_bytes:
@@ -144,7 +148,6 @@ class StopAndWait:
                 continue
 
             if datagram.typ == MsgType.OK:
-                # Modo LINGER
                 t_end = time.time() + quiet_time
                 while time.time() < t_end:
                     raw = self.recv_fn(quiet_time)
@@ -178,7 +181,7 @@ class StopAndWait:
                 if not encoded:
                     continue
                 
-                self.sock.sendto(encoded, self.peer)
+                self.sock.sendto(encoded, self.addr)
 
                 t_end = time.time() + linger_factor * self.rto
 
@@ -196,47 +199,34 @@ class StopAndWait:
                         if not encoded:
                             continue
                         
-                        self.sock.sendto(encoded, self.peer)
+                        self.sock.sendto(encoded, self.addr)
                         # resetear linger
                         t_end = time.time() + linger_factor * self.rto
                 return
 
-    def receive_bye(self) -> bool:
-        self.sock.settimeout(self.rto)
-
-        try:
-            bytes, _ = self.sock.recvfrom(MTU)
-        except SocketTimeout:
-            return False
-        
-        try:
-            datagram = Datagram.decode(bytes)
-        except (Truncated, BadChecksum):
-            return False
-        
-        return datagram.typ == MsgType.BYE
-    
     def send_ok(self) -> None:
-        ok = make_ok(ver=VER_SW)
-
         try:
-            encoded = ok.encode()
+            encoded = make_ok(ver=VER_SW).encode()
         except Exception:
             raise
 
-        self.sock.sendto(encoded, self.peer)
+        self.sock.sendto(encoded, self.addr)
 
     def receive_ok(self) -> bool:
-        self.sock.settimeout(self.rto)
-        
-        try:
-            bytes, _ = self.sock.recvfrom(MTU)
-        except SocketTimeout:
+        raw_bytes = self.recv_fn(self.rto)
+        if not raw_bytes:
             return False
         
-        try:
-            datagram = Datagram.decode(bytes)
-        except (Truncated, BadChecksum):
+        datagram = self._safe_decode(raw_bytes)
+        if not datagram:
             return False
-        
+                
         return datagram.typ == MsgType.OK
+    
+    def send_bye(self) -> None:
+        try:
+            encoded = make_bye(ver=VER_SW).encode()
+        except Exception:
+            raise
+
+        self.sock.sendto(encoded, self.addr)        

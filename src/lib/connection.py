@@ -1,19 +1,19 @@
 from dataclasses import dataclass
-
-from lib.file_handler import FileHandler
+from logging import Logger
 from socket import socket, AF_INET, SOCK_DGRAM
+from typing import Callable, Optional, Protocol
 
-from lib.logger import Logger
-from lib.protocolo_amcgf import MTU, PAYLOAD_ERR_MSG_KEY, Datagram, MsgType, make_ok
-from lib.sw import StopAndWait
 from lib.config import *
+from lib.file_handler import FileHandler
+from lib.protocol import Protocol, create_protocol
+from lib.protocolo_amcgf import MTU, PAYLOAD_ERR_MSG_KEY, Datagram, MsgType, make_ok
 
 @dataclass
 class Connection:
     verbose: bool = True
     quiet: bool = False
-    host: str = '10.0.0.1'
-    port: int = 6379
+    host: str = IP_SERVER_DEFAULT
+    port: int = PORT_SERVER_DEFAULT
     protocol: int | None = None
     file_handler: FileHandler | None = None
 
@@ -27,18 +27,39 @@ class Connection:
             sock.settimeout(timeout)
         
         return sock
-
-    def _send_control_and_prepare_sw(self, req_bytes: bytes, timeout: float = TIMEOUT_MAX, rto: float = RTO, logger: Logger | None = None ) -> tuple[StopAndWait | None, tuple[str, int] | None, socket | None]:
+    
+    def _send_control(
+            self,
+            ver: int,
+            req_bytes: bytes,
+            timeout: float = TIMEOUT_MAX,
+            rto: float = RTO,
+            logger: Logger | None = None,
+            _recv_fn: Optional[Callable[[float], bytes | None]] | None = None
+            ) -> tuple[Protocol | None, tuple[str, int] | None, socket | None]:
         """
         Client-side helper.
-        Sends a control request (already encoded), waits for response, handles ERR, and returns a configured StopAndWait instance,
+        Sends a control request (already encoded), waits for response, handles ERR, and returns a configured Protocol instance,
         the peer address, and the underlying control socket. Returns (None, None, None) on ERR.
         """
 
         sock = self._make_udp_socket(timeout=timeout)
-        sock.sendto(req_bytes, (self.host, self.port))
-
-        bytes, addr = sock.recvfrom(MTU)
+        
+        # LOOP CON RETRYS
+        exito = False
+        for _ in range(RETRY_MAX):
+            try:
+                sock.sendto(req_bytes, (self.host, self.port))
+                bytes, addr = sock.recvfrom(MTU)
+                exito = True
+                break
+            except socket.timeout:
+                pass
+        
+        # Loggear el error
+        if not exito:
+            logger.log_error("[ERROR] No se pudo completar la solicitud")
+            return None, None, None
         
         try:
             ok = Datagram.decode(bytes)
@@ -50,22 +71,25 @@ class Connection:
             sock.close()
             return None, None, None
 
-        sw = StopAndWait(sock=sock, peer=addr, rto=rto)
-        
-        return sw, addr, sock
+        return create_protocol(type=ver, sock=sock, addr=addr, rto=rto), addr, sock
 
-    def _send_ok_and_prepare_sw(self, sock: socket, peer_addr: tuple[str, int], rto: float = RTO, rcv = None) -> StopAndWait:
+    def _send_ok(
+            self,
+            ver: int,
+            sock: socket,
+            addr: tuple[str, int],
+            rto: float = RTO,
+            recv_fn: Optional[Callable[[float], bytes | None]] | None = None
+            ) -> Protocol:
         """
         Server-side helper. Sends OK to the peer and returns a configured StopAndWait instance.
         """
 
-        ok = make_ok()
-        
         try:
-            encoded = ok.encode()
+            encoded = make_ok().encode()
         except Exception:
             raise
-        
-        sock.sendto(encoded, peer_addr)
-        
-        return StopAndWait(sock=sock, peer=peer_addr, rto=rto, recv_fn=rcv)
+
+        sock.sendto(encoded, addr)
+
+        return create_protocol(type=ver, sock=sock, addr=addr, rto=rto, recv_fn=recv_fn)

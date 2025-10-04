@@ -1,3 +1,4 @@
+from logging import Logger
 import sys
 
 from signal import SIGINT, signal
@@ -36,8 +37,7 @@ def process_args(args: Namespace):
     server.host = args.host if args.host else server.host
     server.port = args.port if args.port else server.port    
     server.file_handler = FileHandler(args.storage) if args.storage else FileHandler(DEFAULT_STORAGE_PATH)
-
-
+    
     return server
 
 if __name__ == '__main__':

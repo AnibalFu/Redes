@@ -29,21 +29,16 @@ from enum import IntEnum
 HDR_FMT  = "!BBHHHII"  # B=1, B=1, H=2, H=2, H=2, I=4, I=4  => 16 bytes
 HDR_SIZE = struct.calcsize(HDR_FMT)
 
-# Version del RDT (Stop-and-Wait o Go-Back-N)
 VER_SW  = 1  # Stop-and-Wait
 VER_GBN = 2  # Go-Back-N
 
-# MTU de payload (recomendado por el TP)
-MSS = 1024
-MTU = HDR_SIZE + MSS
 
-# Flags de 16 bits
 # Se usa el bit mas alto (0x8000) como "ACK flag" (0x8000 = 1000 0000 0000 0000)
 FLAG_ACK = 0x8000
-# Flag MF (More Fragments)
+# Flag MF (More Fragments) | 0x4000 = 0100 0000 0000 0000
 FLAG_MF  = 0x4000   
 
-# Convencion: ack == 0 => no hay ACK piggyback
+# ack == 0 => no hay ACK piggyback
 ACK_NONE = 0
 
 PAYLOAD_DATA_KEY = "chunk" # deprecado
