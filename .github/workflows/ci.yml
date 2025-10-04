@@ -24,6 +24,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install pytest
           pip install matplotlib
+          pip install tqdm
 
       - name: Run tests
         run: |
