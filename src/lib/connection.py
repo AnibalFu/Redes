@@ -44,9 +44,22 @@ class Connection:
         """
 
         sock = self._make_udp_socket(timeout=timeout)
-        sock.sendto(req_bytes, (self.host, self.port))
 
-        bytes, addr = sock.recvfrom(MTU)
+        ok_received = False
+        for _ in range(5):
+            try:
+                sock.sendto(req_bytes, (self.host, self.port))
+                bytes, addr = sock.recvfrom(MTU)
+                ok_received = True
+                break
+            except socket.timeout:
+                pass
+
+        if not ok_received:
+            if logger:
+                logger.log_error("[ERROR] No se recibió respuesta del servidor.")
+            sock.close()
+            return None, None, None
         
         try:
             ok = Datagram.decode(bytes)
