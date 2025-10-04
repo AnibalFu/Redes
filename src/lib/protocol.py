@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from socket import socket, timeout as SocketTimeout
 from typing import Optional, Callable
 
-from lib.config import RTO
+from lib.config import RTO, RETRY_MAX
 from lib.logger import Logger
 from lib.protocolo_amcgf import MTU, VER_GBN, VER_SW, BadChecksum, Datagram, Truncated
 
@@ -95,7 +95,7 @@ class Protocol(ABC):
     # -----------------------------
     
     @abstractmethod
-    def send_bye_with_retry(self, max_retries: int = 8, quiet_time: float = 0.2) -> bool:
+    def send_bye_with_retry(self, max_retries: int = RETRY_MAX, quiet_time: float = 0.2) -> bool:
         pass
     
     @abstractmethod

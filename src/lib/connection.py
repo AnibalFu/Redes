@@ -12,8 +12,8 @@ from lib.protocolo_amcgf import MTU, PAYLOAD_ERR_MSG_KEY, Datagram, MsgType, mak
 class Connection:
     verbose: bool = True
     quiet: bool = False
-    host: str = '10.0.0.1'
-    port: int = 6379
+    host: str = IP_SERVER_DEFAULT
+    port: int = PORT_SERVER_DEFAULT
     protocol: int | None = None
     file_handler: FileHandler | None = None
 
@@ -35,7 +35,7 @@ class Connection:
             timeout: float = TIMEOUT_MAX,
             rto: float = RTO,
             logger: Logger | None = None,
-            recv_fn: Optional[Callable[[float], bytes | None]] | None = None
+            _recv_fn: Optional[Callable[[float], bytes | None]] | None = None
             ) -> tuple[Protocol | None, tuple[str, int] | None, socket | None]:
         """
         Client-side helper.
@@ -44,9 +44,22 @@ class Connection:
         """
 
         sock = self._make_udp_socket(timeout=timeout)
-        sock.sendto(req_bytes, (self.host, self.port))
-
-        bytes, addr = sock.recvfrom(MTU)
+        
+        # LOOP CON RETRYS
+        exito = False
+        for _ in range(RETRY_MAX):
+            try:
+                sock.sendto(req_bytes, (self.host, self.port))
+                bytes, addr = sock.recvfrom(MTU)
+                exito = True
+                break
+            except socket.timeout:
+                pass
+        
+        # Loggear el error
+        if not exito:
+            logger.log_error("[ERROR] No se pudo completar la solicitud")
+            return None, None, None
         
         try:
             ok = Datagram.decode(bytes)

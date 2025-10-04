@@ -44,10 +44,13 @@ class Client(Connection):
         except Exception as e:
             self.logger.log_error(f"[ERROR] No se pudo crear el datagrama de solicitud: {e}")
             return
-
-        proto, _, sock = self._send_control(ver=self.protocol, req_bytes=encoded, timeout=TIMEOUT_MAX + 0.1, logger=self.logger)
+        
+        
+        # ACA DEBERIA IR LOS RETRYS
+        proto, _, sock = self._send_control(ver=self.protocol, req_bytes=encoded, timeout=RTO, logger=self.logger)
         if not proto:
             return
+        # TERMINA ACA LOS RETRYS
         
         seq_number = 0
         with open(self.src, 'rb') as file:
@@ -83,7 +86,7 @@ class Client(Connection):
             self.logger.log_error(f"[ERROR] No se pudo crear el datagrama de solicitud: {e}")
             return
 
-        proto, _, sock = self._send_control(ver=self.protocol, req_bytes=encoded, timeout=TIMEOUT_MAX + 0.1, logger=self.logger)
+        proto, _, sock = self._send_control(ver=self.protocol, req_bytes=encoded, timeout=RTO, logger=self.logger)
         if not proto:
             return
 
@@ -100,7 +103,7 @@ class Client(Connection):
             if datagram.typ == MsgType.DATA and datagram.seq == expected_seq:
                 if t0 is not None:
                     rtt = time.time() - t0
-                    self.logger.log_rtt(rtt * 1000)  
+                    self.logger.log_rtt(rtt * 1000) # A segundos
 
                 self.file_handler.save_datagram(self.name, datagram)
                 

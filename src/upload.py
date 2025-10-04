@@ -2,6 +2,7 @@ from argparse import ArgumentParser, RawDescriptionHelpFormatter, Namespace
 
 from lib.logger import Logger
 from lib.protocolo_amcgf import *
+from lib.config import CLI_GBN, CLI_SW
 from lib.client import DEFAULT_NAME, DEFAULT_SRC, Client
 
 def define_flags():
@@ -28,9 +29,9 @@ def process_args(args: Namespace):
     client.name = args.name if args.name else DEFAULT_NAME
     client.logger = Logger(client.verbose)
 
-    if args.protocol == 'SW':
+    if args.protocol == CLI_SW:
         client.protocol = VER_SW
-    elif args.protocol == 'GBN':
+    elif args.protocol == CLI_GBN:
         client.protocol = VER_GBN
 
     return client
