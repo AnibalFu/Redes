@@ -24,6 +24,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install pytest
           pip install matplotlib
+          pip install colorama
+          pip install tqdm
 
       - name: Run tests
         run: |

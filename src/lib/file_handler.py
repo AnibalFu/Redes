@@ -40,7 +40,6 @@ class FileHandler:
         file.write(datagram.payload)
 
         if not (datagram.flags & FLAG_MF): 
-            print(f"[DEBUG] Archivo '{filename}' guardado completo")
             self.close_file(filename)
     
     def close_file(self, filename: str) -> None:
@@ -62,6 +61,5 @@ class FileHandler:
                     break
                 
                 more_fragments = file.tell() < filesize
-                print(f"[DEBUG] Enviando payload: '{payload}' MF={more_fragments} de tamaño {len(payload)}")
                 
                 yield payload, more_fragments

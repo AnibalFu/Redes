@@ -1,9 +1,11 @@
 import os
 
 from dataclasses import dataclass
+import time
 
 from lib.connection import Connection
 from lib.config import *
+from lib.logger import Logger
 from lib.protocolo_amcgf import FLAG_MF, MSS, MsgType, make_data, make_req_download, make_req_upload
 
 DEFAULT_NAME = "file.txt"
@@ -15,6 +17,7 @@ class ClientError(Exception): ...
 class Client(Connection):
     src: str | None = None
     name: str | None = None
+    logger: Logger | None = None
 
     def _check_path(self, path: str) -> None: 
         """Valida que exista el archivo antes de usarlo."""
@@ -26,19 +29,19 @@ class Client(Connection):
         try: 
             self._check_path(self.src) 
         except ClientError as e: 
-            self.logger.log(f"[ERROR]: {e}")
+            self.logger.log_error(f"[ERROR]: {e}")
             return
         
         # Comienza la transferencia
-        self.logger.start_transfer()
+        self.logger.start_transfer(os.path.getsize(self.src), mode="Upload")
 
         try:
             encoded = make_req_upload(self.name, self.protocol, os.path.getsize(self.src)).encode()
         except Exception as e:
-            self.logger.log(f"[ERROR] No se pudo crear el datagrama de solicitud: {e}")
+            self.logger.log_error(f"[ERROR] No se pudo crear el datagrama de solicitud: {e}")
             return
 
-        sw, _, sock = self._send_control_and_prepare_sw(req_bytes=encoded, timeout=TIMEOUT_MAX + 0.1)
+        sw, _, sock = self._send_control_and_prepare_sw(req_bytes=encoded, timeout=TIMEOUT_MAX + 0.1, logger = self.logger)
         if not sw:
             return
         
@@ -69,12 +72,12 @@ class Client(Connection):
         self.logger.log(f"[INFO] Solicitando descarga de '{self.name}' desde {self.host}:{self.port}")
 
         # Comienza la transferencia
-        self.logger.start_transfer()
+        self.logger.start_transfer(None, mode="Download")
 
         try:
             encoded = make_req_download(self.name, self.protocol).encode()
         except Exception as e:
-            self.logger.log(f"[ERROR] No se pudo crear el datagrama de solicitud: {e}")
+            self.logger.log_error(f"[ERROR] No se pudo crear el datagrama de solicitud: {e}")
             return
 
         sw, _, sock = self._send_control_and_prepare_sw(encoded, timeout=TIMEOUT_MAX + 0.1)
@@ -82,6 +85,7 @@ class Client(Connection):
             return
 
         seq_number = 0
+        t0 = None
         while True:
             datagram = sw.receive_data()
             
@@ -93,12 +97,18 @@ class Client(Connection):
                 continue
             
             if datagram.typ == MsgType.DATA and datagram.seq == seq_number:
+                if t0 is not None:
+                    rtt = time.time() - t0
+                    self.logger.log_rtt(rtt * 1000)  
+
                 self.file_handler.save_datagram(self.name, datagram)
                 
                 self.logger.add_bytes(len(datagram.payload))
                 
                 seq_number += 1
                 sw.send_ack(seq_number)
+                
+                t0 = time.time()
                 
                 if not (datagram.flags & FLAG_MF):
                     break
